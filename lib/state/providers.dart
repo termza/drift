@@ -5,6 +5,7 @@ import '../models/track.dart';
 import '../services/audio_player_service.dart';
 import '../services/auth_repository.dart';
 import '../services/database.dart';
+import '../services/favorites_service.dart';
 import '../services/library_service.dart';
 import '../services/pocketbase_backend.dart';
 import '../services/progress_store.dart';
@@ -25,6 +26,10 @@ final libraryServiceProvider = Provider<LibraryService>((ref) {
 
 final progressStoreProvider = Provider<ProgressStore>((ref) {
   return ProgressStore(ref.watch(databaseProvider));
+});
+
+final favoritesServiceProvider = Provider<FavoritesService>((ref) {
+  return FavoritesService(ref.watch(databaseProvider));
 });
 
 final audioPlayerProvider = Provider<AudioPlayerService>((ref) {
@@ -58,8 +63,17 @@ final allProgressProvider = FutureProvider<Map<String, TrackProgress>>(
   (ref) async => ref.watch(progressStoreProvider).getAll(),
 );
 
-/// Most-recently-updated track that still has time remaining. Powers the
-/// "Continue listening" hero card on the library screen.
+final favoritesProvider = FutureProvider<Set<String>>((ref) async {
+  return ref.watch(favoritesServiceProvider).all();
+});
+
+final favoriteTracksProvider = FutureProvider<List<Track>>((ref) async {
+  final ids = await ref.watch(favoritesServiceProvider).orderedIds();
+  final tracks = await ref.watch(libraryProvider.future);
+  final byId = {for (final t in tracks) t.id: t};
+  return [for (final id in ids) if (byId.containsKey(id)) byId[id]!];
+});
+
 final continueListeningProvider =
     FutureProvider<({Track track, TrackProgress progress})?>((ref) async {
   final tracks = await ref.watch(libraryProvider.future);
@@ -83,8 +97,13 @@ final playbackSnapshotProvider = StreamProvider<PlaybackSnapshot>((ref) {
 
 final currentTrackProvider = StateProvider<Track?>((ref) => null);
 
-/// Library sort options.
 enum LibrarySort { recentlyAdded, title, artist }
 
 final librarySortProvider =
     StateProvider<LibrarySort>((ref) => LibrarySort.recentlyAdded);
+
+/// Which top-level destination is selected in the sidebar.
+enum AppSection { library, favorites }
+
+final currentSectionProvider =
+    StateProvider<AppSection>((ref) => AppSection.library);

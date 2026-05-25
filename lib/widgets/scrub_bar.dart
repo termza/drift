@@ -2,11 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
 
-/// Custom scrub bar — thinner track than the default Material slider, with a
-/// thumb that grows on press and a subtle accent on the buffered portion.
-///
-/// Built on [GestureDetector] + [CustomPaint] rather than [Slider] so we have
-/// full control over the visual.
+/// Custom hairline scrub bar. A 2px track with no thumb when idle; the thumb
+/// fades in only while you're dragging. Less visual chrome.
 class ScrubBar extends StatefulWidget {
   const ScrubBar({
     super.key,
@@ -26,15 +23,15 @@ class ScrubBar extends StatefulWidget {
 class _ScrubBarState extends State<ScrubBar>
     with SingleTickerProviderStateMixin {
   late final AnimationController _thumb;
-  double? _dragFraction;
+  double? _drag;
 
   @override
   void initState() {
     super.initState();
     _thumb = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 180),
-      reverseDuration: const Duration(milliseconds: 240),
+      duration: const Duration(milliseconds: 160),
+      reverseDuration: const Duration(milliseconds: 220),
     );
   }
 
@@ -45,64 +42,57 @@ class _ScrubBarState extends State<ScrubBar>
   }
 
   double get _fraction {
-    if (_dragFraction != null) return _dragFraction!.clamp(0.0, 1.0);
+    if (_drag != null) return _drag!.clamp(0.0, 1.0);
     final total = widget.duration.inMilliseconds;
     if (total == 0) return 0;
     return (widget.position.inMilliseconds / total).clamp(0.0, 1.0);
   }
 
-  void _onDown(DragDownDetails d, double width) {
-    _thumb.forward();
-    setState(() => _dragFraction = d.localPosition.dx / width);
+  void _setDrag(double dx, double width) {
+    setState(() => _drag = (dx / width).clamp(0.0, 1.0));
   }
 
-  void _onUpdate(DragUpdateDetails d, double width) {
-    setState(() => _dragFraction = (d.localPosition.dx / width).clamp(0.0, 1.0));
-  }
-
-  void _onEnd() {
-    if (_dragFraction != null) {
-      final ms = (widget.duration.inMilliseconds * _dragFraction!).round();
+  void _commit() {
+    if (_drag != null) {
+      final ms = (widget.duration.inMilliseconds * _drag!).round();
       widget.onSeek(Duration(milliseconds: ms));
     }
     _thumb.reverse();
-    setState(() => _dragFraction = null);
-  }
-
-  void _onTap(TapUpDetails d, double width) {
-    final f = (d.localPosition.dx / width).clamp(0.0, 1.0);
-    final ms = (widget.duration.inMilliseconds * f).round();
-    widget.onSeek(Duration(milliseconds: ms));
+    setState(() => _drag = null);
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final track = theme.colorScheme.outlineVariant;
 
     return LayoutBuilder(
       builder: (context, c) {
         return SizedBox(
-          height: 28,
+          height: 24,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onHorizontalDragDown: (d) => _onDown(
-              DragDownDetails(localPosition: d.localPosition),
-              c.maxWidth,
-            ),
-            onHorizontalDragUpdate: (d) => _onUpdate(d, c.maxWidth),
-            onHorizontalDragEnd: (_) => _onEnd(),
-            onHorizontalDragCancel: _onEnd,
-            onTapUp: (d) => _onTap(d, c.maxWidth),
+            onHorizontalDragDown: (d) {
+              _thumb.forward();
+              _setDrag(d.localPosition.dx, c.maxWidth);
+            },
+            onHorizontalDragUpdate: (d) =>
+                _setDrag(d.localPosition.dx, c.maxWidth),
+            onHorizontalDragEnd: (_) => _commit(),
+            onHorizontalDragCancel: _commit,
+            onTapUp: (d) {
+              final f = (d.localPosition.dx / c.maxWidth).clamp(0.0, 1.0);
+              final ms = (widget.duration.inMilliseconds * f).round();
+              widget.onSeek(Duration(milliseconds: ms));
+            },
             child: AnimatedBuilder(
               animation: _thumb,
               builder: (context, _) => CustomPaint(
-                size: Size(c.maxWidth, 28),
-                painter: _ScrubPainter(
+                size: Size(c.maxWidth, 24),
+                painter: _Painter(
                   fraction: _fraction,
-                  trackColor: track,
-                  activeColor: AppColors.accent,
-                  thumbScale: 1 + _thumb.value * 0.6,
+                  track: theme.colorScheme.outlineVariant,
+                  active: AppColors.accent,
+                  thumb: _thumb.value,
                 ),
               ),
             ),
@@ -113,61 +103,51 @@ class _ScrubBarState extends State<ScrubBar>
   }
 }
 
-class _ScrubPainter extends CustomPainter {
-  _ScrubPainter({
+class _Painter extends CustomPainter {
+  _Painter({
     required this.fraction,
-    required this.trackColor,
-    required this.activeColor,
-    required this.thumbScale,
+    required this.track,
+    required this.active,
+    required this.thumb,
   });
 
   final double fraction;
-  final Color trackColor;
-  final Color activeColor;
-  final double thumbScale;
+  final Color track;
+  final Color active;
+  final double thumb;
 
   @override
   void paint(Canvas canvas, Size size) {
     final y = size.height / 2;
-    final left = const Offset(0, 0);
-    final right = Offset(size.width, 0);
-    final trackY = y;
 
     final trackPaint = Paint()
-      ..color = trackColor
-      ..strokeWidth = 2.5
+      ..color = track
+      ..strokeWidth = 2
       ..strokeCap = StrokeCap.round;
-
     final activePaint = Paint()
-      ..color = activeColor
-      ..strokeWidth = 2.5
+      ..color = active
+      ..strokeWidth = 2
       ..strokeCap = StrokeCap.round;
 
-    canvas.drawLine(
-      Offset(left.dx, trackY),
-      Offset(right.dx, trackY),
-      trackPaint,
-    );
+    canvas.drawLine(Offset(0, y), Offset(size.width, y), trackPaint);
 
     final activeEnd = size.width * fraction;
     if (activeEnd > 0) {
-      canvas.drawLine(
-        Offset(0, trackY),
-        Offset(activeEnd, trackY),
-        activePaint,
-      );
+      canvas.drawLine(Offset(0, y), Offset(activeEnd, y), activePaint);
     }
 
-    // Thumb
-    final thumbPaint = Paint()..color = activeColor;
-    final r = 5.0 * thumbScale;
-    canvas.drawCircle(Offset(activeEnd, trackY), r, thumbPaint);
+    // Thumb only appears mid-drag — keep the resting state quiet.
+    if (thumb > 0) {
+      final r = 5.0 * thumb;
+      final thumbPaint = Paint()..color = active;
+      canvas.drawCircle(Offset(activeEnd, y), r, thumbPaint);
+    }
   }
 
   @override
-  bool shouldRepaint(_ScrubPainter old) =>
+  bool shouldRepaint(_Painter old) =>
       old.fraction != fraction ||
-      old.thumbScale != thumbScale ||
-      old.activeColor != activeColor ||
-      old.trackColor != trackColor;
+      old.thumb != thumb ||
+      old.active != active ||
+      old.track != track;
 }

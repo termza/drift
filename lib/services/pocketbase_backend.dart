@@ -113,6 +113,7 @@ class PocketBaseBackend implements SyncBackend {
   }
 
   /// Forget the record-id cache (call on sign-out / server URL change).
+  @override
   void reset() {
     _recordIdByTrack.clear();
     _primed = false;
@@ -125,7 +126,7 @@ class PocketBaseBackend implements SyncBackend {
   }
 
   static DateTime _parseUpdated(RecordModel r) {
-    final raw = r.updated;
+    final raw = r.get<String>('updated');
     if (raw.isEmpty) return DateTime.now().toUtc();
     return DateTime.tryParse(raw.replaceFirst(' ', 'T')) ??
         DateTime.now().toUtc();

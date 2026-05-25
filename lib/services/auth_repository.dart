@@ -42,14 +42,14 @@ class AuthRepository extends ChangeNotifier {
   }
 
   PocketBase get pb => _pb;
-  String get serverUrl => _pb.baseUrl;
+  String get serverUrl => _pb.baseURL;
   bool get isSignedIn => _pb.authStore.isValid;
   String? get userId => _pb.authStore.record?.id;
   String? get userEmail => _pb.authStore.record?.data['email'] as String?;
 
   Future<void> setServerUrl(String url) async {
     final cleaned = url.trim().replaceAll(RegExp(r'/+$'), '');
-    if (cleaned == _pb.baseUrl) return;
+    if (cleaned == _pb.baseURL) return;
 
     await _prefs.setString(_kServerUrl, cleaned);
     // Tearing down and rebuilding is simpler than mutating the existing client.

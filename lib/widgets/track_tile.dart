@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/track.dart';
+import '../state/providers.dart';
+import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import 'artwork.dart';
 import 'playing_indicator.dart';
 
-class TrackTile extends StatelessWidget {
+class TrackTile extends ConsumerWidget {
   const TrackTile({
     super.key,
     required this.track,
@@ -13,38 +16,39 @@ class TrackTile extends StatelessWidget {
     this.isCurrent = false,
     this.isPlaying = false,
     this.progressFraction,
-    this.onMore,
   });
 
   final Track track;
   final VoidCallback onTap;
-  final VoidCallback? onMore;
-
-  /// Track is the one currently loaded in the player (regardless of play state).
   final bool isCurrent;
-
-  /// Player is actively playing the loaded track.
   final bool isPlaying;
-
   final double? progressFraction;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final subtitle =
-        [track.artist, track.album].whereType<String>().join(' · ');
+        [track.artist, track.album].whereType<String>().join(' — ');
+    final isFav = ref.watch(favoritesProvider).maybeWhen(
+          data: (s) => s.contains(track.id),
+          orElse: () => false,
+        );
 
     return InkWell(
       onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(
-          horizontal: Insets.sm + 4,
-          vertical: 10,
+          horizontal: Insets.gutter,
+          vertical: 8,
         ),
         child: Row(
           children: [
-            Artwork(track: track, size: 50),
-            const SizedBox(width: Insets.sm + 2),
+            Artwork(
+              track: track,
+              size: 52,
+              borderRadius: BorderRadius.circular(Radii.sm),
+            ),
+            const SizedBox(width: Insets.md),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -59,19 +63,18 @@ class TrackTile extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.titleSmall?.copyWith(
                             color: isCurrent
-                                ? theme.colorScheme.primary
+                                ? AppColors.accent
                                 : theme.textTheme.titleSmall?.color,
-                            fontWeight:
-                                isCurrent ? FontWeight.w600 : FontWeight.w500,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                       ),
                       if (isCurrent) ...[
-                        const SizedBox(width: Insets.xs),
-                        PlayingIndicator(
-                          playing: isPlaying,
-                          color: theme.colorScheme.primary,
-                          size: 14,
+                        const SizedBox(width: 6),
+                        const PlayingIndicator(
+                          playing: true,
+                          color: AppColors.accent,
+                          size: 12,
                         ),
                       ],
                     ],
@@ -85,38 +88,11 @@ class TrackTile extends StatelessWidget {
                       style: theme.textTheme.bodySmall,
                     ),
                   ],
-                  if (progressFraction != null && progressFraction! > 0) ...[
-                    const SizedBox(height: 7),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(1),
-                      child: LinearProgressIndicator(
-                        value: progressFraction!.clamp(0.0, 1.0),
-                        minHeight: 2,
-                        backgroundColor: theme.dividerTheme.color,
-                        valueColor: AlwaysStoppedAnimation(
-                          theme.colorScheme.primary.withValues(alpha: 0.7),
-                        ),
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),
-            const SizedBox(width: Insets.xs),
-            if (track.duration != null)
-              Text(
-                _fmt(track.duration!),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
-              ),
-            if (onMore != null)
-              IconButton(
-                onPressed: onMore,
-                icon: const Icon(Icons.more_horiz, size: 20),
-                visualDensity: VisualDensity.compact,
-                splashRadius: 18,
-              ),
+            const SizedBox(width: Insets.sm),
+            _HeartButton(trackId: track.id, isFav: isFav),
           ],
         ),
       ),
@@ -124,9 +100,30 @@ class TrackTile extends StatelessWidget {
   }
 }
 
-String _fmt(Duration d) {
-  final h = d.inHours;
-  final m = d.inMinutes.remainder(60).toString().padLeft(h > 0 ? 2 : 1, '0');
-  final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-  return h > 0 ? '$h:$m:$s' : '$m:$s';
+class _HeartButton extends ConsumerWidget {
+  const _HeartButton({required this.trackId, required this.isFav});
+  final String trackId;
+  final bool isFav;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return InkResponse(
+      onTap: () async {
+        await ref.read(favoritesServiceProvider).toggle(trackId);
+        ref.invalidate(favoritesProvider);
+        ref.invalidate(favoriteTracksProvider);
+      },
+      radius: 22,
+      child: Padding(
+        padding: const EdgeInsets.all(Insets.xs),
+        child: Icon(
+          isFav
+              ? Icons.favorite_rounded
+              : Icons.favorite_outline_rounded,
+          size: 20,
+          color: isFav ? AppColors.accent : AppColors.textTertiary,
+        ),
+      ),
+    );
+  }
 }

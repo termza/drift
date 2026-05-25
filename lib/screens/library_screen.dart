@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/playback_state.dart';
 import '../models/track.dart';
 import '../state/providers.dart';
+import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../widgets/continue_card.dart';
 import '../widgets/empty_library.dart';
@@ -18,10 +18,10 @@ class LibraryScreen extends ConsumerStatefulWidget {
 
 class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   String _query = '';
+  bool _searchOpen = false;
 
   Future<void> _import() async {
-    final added =
-        await ref.read(libraryServiceProvider).pickAndImport();
+    final added = await ref.read(libraryServiceProvider).pickAndImport();
     if (!mounted) return;
     if (added.isNotEmpty) {
       ref.invalidate(libraryProvider);
@@ -31,15 +31,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           content: Text(
             'Added ${added.length} ${added.length == 1 ? 'track' : 'tracks'}',
           ),
-          behavior: SnackBarBehavior.floating,
         ),
       );
     }
   }
 
-  Future<void> _play(Track track) async {
-    await ref.read(audioPlayerProvider).load(track);
-    ref.read(currentTrackProvider.notifier).state = track;
+  Future<void> _play(Track t) async {
+    await ref.read(audioPlayerProvider).load(t);
+    ref.read(currentTrackProvider.notifier).state = t;
   }
 
   @override
@@ -56,50 +55,43 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     final sort = ref.watch(librarySortProvider);
 
     return Scaffold(
+      backgroundColor: AppColors.bg,
       body: SafeArea(
         child: libraryAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (e, _) => Center(
-            child: Text(
-              'Failed to load library\n$e',
-              textAlign: TextAlign.center,
-            ),
+            child: Text('Failed to load library\n$e',
+                textAlign: TextAlign.center),
           ),
           data: (tracks) {
             if (tracks.isEmpty) return EmptyLibrary(onImport: _import);
 
             final progressMap =
                 progressAsync.maybeWhen(data: (m) => m, orElse: () => null);
-
             final filtered = _filterAndSort(tracks, sort);
+            final showContinue = continueAsync.maybeWhen(
+              data: (v) => v != null && _query.isEmpty,
+              orElse: () => false,
+            );
 
             return CustomScrollView(
               slivers: [
                 SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      Insets.lg,
-                      Insets.lg,
-                      Insets.lg,
-                      Insets.xs,
-                    ),
-                    child: _Header(
-                      total: tracks.length,
-                      duration: _totalDuration(tracks),
-                      onImport: _import,
-                    ),
+                  child: _Header(
+                    onImport: _import,
+                    onSearchToggle: () =>
+                        setState(() => _searchOpen = !_searchOpen),
+                    searchOpen: _searchOpen,
+                    onQuery: (v) => setState(() => _query = v),
                   ),
                 ),
-                if (continueAsync.maybeWhen(
-                  data: (v) => v != null,
-                  orElse: () => false,
-                ))
+                if (showContinue)
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(
-                        Insets.lg,
+                        Insets.gutter,
                         Insets.md,
-                        Insets.lg,
+                        Insets.gutter,
                         0,
                       ),
                       child: ContinueCard(
@@ -112,66 +104,91 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(
-                      Insets.lg,
-                      Insets.lg,
-                      Insets.lg,
+                      Insets.gutter,
+                      Insets.xl,
+                      Insets.gutter,
                       Insets.sm,
                     ),
-                    child: _SearchAndSort(
-                      query: _query,
-                      sort: sort,
-                      onQuery: (v) => setState(() => _query = v),
-                      onSort: (s) => ref
-                          .read(librarySortProvider.notifier)
-                          .state = s,
+                    child: Row(
+                      children: [
+                        Text(
+                          _query.isNotEmpty
+                              ? 'Results'
+                              : 'All tracks',
+                          style: theme.textTheme.headlineLarge,
+                        ),
+                        const SizedBox(width: Insets.sm),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.fillTertiary,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '${filtered.length}',
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              color: AppColors.textSecondary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
+                        _SortButton(
+                          current: sort,
+                          onSelected: (s) => ref
+                              .read(librarySortProvider.notifier)
+                              .state = s,
+                        ),
+                      ],
                     ),
                   ),
                 ),
                 if (filtered.isEmpty)
                   SliverFillRemaining(
                     hasScrollBody: false,
-                    child: Center(
-                      child: Text(
-                        'No matches for "$_query"',
-                        style: theme.textTheme.bodyMedium,
+                    child: Padding(
+                      padding: const EdgeInsets.all(Insets.xl),
+                      child: Center(
+                        child: Text(
+                          'No matches for "$_query"',
+                          style: theme.textTheme.bodyMedium,
+                        ),
                       ),
                     ),
                   )
                 else
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(
-                      Insets.xs,
-                      0,
-                      Insets.xs,
-                      140,
-                    ),
-                    sliver: SliverList.separated(
-                      itemCount: filtered.length,
-                      separatorBuilder: (_, __) => Divider(
-                        indent: 78,
-                        endIndent: Insets.md,
-                        color: theme.dividerTheme.color,
+                  SliverList.separated(
+                    itemCount: filtered.length,
+                    separatorBuilder: (_, __) => const Padding(
+                      padding: EdgeInsets.only(left: 84),
+                      child: Divider(
+                        height: 0.5,
+                        color: AppColors.borderSubtle,
                       ),
-                      itemBuilder: (context, i) {
-                        final t = filtered[i];
-                        final isCurrent = current?.id == t.id;
-                        final p = progressMap?[t.id];
-                        final dur = t.duration?.inMilliseconds;
-                        final fraction = (p == null ||
-                                dur == null ||
-                                dur == 0)
-                            ? null
-                            : p.position.inMilliseconds / dur;
-                        return TrackTile(
-                          track: t,
-                          isCurrent: isCurrent,
-                          isPlaying: isCurrent && (snap?.playing ?? false),
-                          progressFraction: fraction,
-                          onTap: () => _play(t),
-                        );
-                      },
                     ),
+                    itemBuilder: (context, i) {
+                      final t = filtered[i];
+                      final isCurrent = current?.id == t.id;
+                      final p = progressMap?[t.id];
+                      final dur = t.duration?.inMilliseconds;
+                      final fraction = (p == null ||
+                              dur == null ||
+                              dur == 0)
+                          ? null
+                          : p.position.inMilliseconds / dur;
+                      return TrackTile(
+                        track: t,
+                        isCurrent: isCurrent,
+                        isPlaying: isCurrent && (snap?.playing ?? false),
+                        progressFraction: fraction,
+                        onTap: () => _play(t),
+                      );
+                    },
                   ),
+                const SliverToBoxAdapter(child: SizedBox(height: 140)),
               ],
             );
           },
@@ -203,167 +220,168 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     }
     return list;
   }
-
-  Duration _totalDuration(List<Track> tracks) {
-    var total = Duration.zero;
-    for (final t in tracks) {
-      if (t.duration != null) total += t.duration!;
-    }
-    return total;
-  }
 }
 
 class _Header extends StatelessWidget {
   const _Header({
-    required this.total,
-    required this.duration,
     required this.onImport,
+    required this.onSearchToggle,
+    required this.searchOpen,
+    required this.onQuery,
   });
-  final int total;
-  final Duration duration;
+
   final VoidCallback onImport;
+  final VoidCallback onSearchToggle;
+  final bool searchOpen;
+  final ValueChanged<String> onQuery;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        Insets.gutter,
+        Insets.lg,
+        Insets.gutter,
+        0,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              Text('Library', style: theme.textTheme.displayMedium),
-              const SizedBox(height: 4),
-              Text(
-                '$total ${total == 1 ? 'track' : 'tracks'} · '
-                '${_fmtTotal(duration)}',
-                style: theme.textTheme.bodySmall,
+              Expanded(
+                child: Text('Library', style: theme.textTheme.displayLarge),
               ),
+              _IconBtn(
+                icon: searchOpen
+                    ? Icons.close_rounded
+                    : Icons.search_rounded,
+                onTap: onSearchToggle,
+              ),
+              _IconBtn(icon: Icons.add_rounded, onTap: onImport),
             ],
           ),
-        ),
-        InkWell(
-          onTap: onImport,
-          customBorder: const CircleBorder(),
-          child: Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHighest,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: theme.colorScheme.outlineVariant,
-                width: 0.5,
-              ),
-            ),
-            child: Icon(
-              Icons.add_rounded,
-              size: 22,
-              color: theme.colorScheme.primary,
-            ),
+          AnimatedSize(
+            duration: Motion.base,
+            curve: Motion.standard,
+            alignment: Alignment.topCenter,
+            child: searchOpen
+                ? Padding(
+                    padding: const EdgeInsets.only(top: Insets.md),
+                    child: TextField(
+                      autofocus: true,
+                      onChanged: onQuery,
+                      decoration: const InputDecoration(
+                        hintText: 'Search title, artist, album',
+                        prefixIcon: Icon(
+                          Icons.search_rounded,
+                          size: 20,
+                          color: AppColors.textTertiary,
+                        ),
+                        isDense: true,
+                      ),
+                    ),
+                  )
+                : const SizedBox.shrink(),
           ),
-        ),
-      ],
-    );
-  }
-}
-
-class _SearchAndSort extends StatelessWidget {
-  const _SearchAndSort({
-    required this.query,
-    required this.sort,
-    required this.onQuery,
-    required this.onSort,
-  });
-
-  final String query;
-  final LibrarySort sort;
-  final ValueChanged<String> onQuery;
-  final ValueChanged<LibrarySort> onSort;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Row(
-      children: [
-        Expanded(
-          child: TextField(
-            onChanged: onQuery,
-            decoration: InputDecoration(
-              hintText: 'Search title, artist, album',
-              prefixIcon: Icon(
-                Icons.search_rounded,
-                size: 20,
-                color: theme.textTheme.bodySmall?.color,
-              ),
-              isDense: true,
-            ),
-          ),
-        ),
-        const SizedBox(width: Insets.xs),
-        PopupMenuButton<LibrarySort>(
-          tooltip: 'Sort',
-          initialValue: sort,
-          onSelected: onSort,
-          color: theme.colorScheme.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(Radii.md),
-            side: BorderSide(
-              color: theme.colorScheme.outlineVariant,
-              width: 0.5,
-            ),
-          ),
-          itemBuilder: (_) => [
-            _menuItem(LibrarySort.recentlyAdded, 'Recently added', sort),
-            _menuItem(LibrarySort.title, 'Title', sort),
-            _menuItem(LibrarySort.artist, 'Artist', sort),
-          ],
-          child: Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(Radii.md),
-              border: Border.all(
-                color: theme.colorScheme.outlineVariant,
-                width: 0.5,
-              ),
-            ),
-            child: Icon(
-              Icons.tune_rounded,
-              size: 20,
-              color: theme.textTheme.bodyMedium?.color,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  PopupMenuItem<LibrarySort> _menuItem(
-    LibrarySort value,
-    String label,
-    LibrarySort current,
-  ) {
-    return PopupMenuItem(
-      value: value,
-      child: Row(
-        children: [
-          Expanded(child: Text(label)),
-          if (value == current)
-            const Icon(Icons.check_rounded, size: 18),
         ],
       ),
     );
   }
 }
 
-String _fmtTotal(Duration d) {
-  if (d == Duration.zero) return 'no duration data';
-  final h = d.inHours;
-  final m = d.inMinutes.remainder(60);
-  if (h > 0) return '${h}h ${m}m';
-  return '${m}m';
+class _IconBtn extends StatelessWidget {
+  const _IconBtn({required this.icon, required this.onTap});
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkResponse(
+      onTap: onTap,
+      radius: 22,
+      child: Padding(
+        padding: const EdgeInsets.all(Insets.xs),
+        child: Icon(icon, size: 24, color: AppColors.accent),
+      ),
+    );
+  }
+}
+
+class _SortButton extends StatelessWidget {
+  const _SortButton({required this.current, required this.onSelected});
+  final LibrarySort current;
+  final ValueChanged<LibrarySort> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return PopupMenuButton<LibrarySort>(
+      tooltip: 'Sort',
+      initialValue: current,
+      onSelected: onSelected,
+      position: PopupMenuPosition.under,
+      itemBuilder: (_) => [
+        _menuItem(LibrarySort.recentlyAdded, 'Recently added'),
+        _menuItem(LibrarySort.title, 'Title'),
+        _menuItem(LibrarySort.artist, 'Artist'),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: Insets.sm,
+          vertical: 6,
+        ),
+        decoration: BoxDecoration(
+          color: AppColors.fillTertiary,
+          borderRadius: BorderRadius.circular(Radii.sm),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              _label(current),
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Icon(
+              Icons.unfold_more_rounded,
+              size: 16,
+              color: AppColors.textTertiary,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _label(LibrarySort s) {
+    switch (s) {
+      case LibrarySort.recentlyAdded:
+        return 'Recent';
+      case LibrarySort.title:
+        return 'Title';
+      case LibrarySort.artist:
+        return 'Artist';
+    }
+  }
+
+  PopupMenuItem<LibrarySort> _menuItem(LibrarySort value, String label) {
+    return PopupMenuItem(
+      value: value,
+      height: 38,
+      child: Row(
+        children: [
+          Expanded(child: Text(label)),
+          if (value == current)
+            const Icon(Icons.check_rounded,
+                size: 16, color: AppColors.accent),
+        ],
+      ),
+    );
+  }
 }

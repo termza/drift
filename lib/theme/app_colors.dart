@@ -1,42 +1,47 @@
 import 'package:flutter/material.dart';
 
-/// Color palette for the app. Dark-first; light is a refined inversion.
-///
-/// The accent is a warm copper that reads as premium/audio-equipment-y without
-/// being trendy. It pairs against near-black surfaces with subtle cool tints.
+/// Apple-Music-inspired dark palette. Pure black background (looks great on
+/// OLED, premium feel), iOS dark gray grouped surfaces, white ink, our copper
+/// kept as the signature accent.
 class AppColors {
   AppColors._();
 
-  // Dark palette
-  static const darkBg = Color(0xFF0A0A0C);
-  static const darkSurface = Color(0xFF131318);
-  static const darkSurfaceElevated = Color(0xFF1C1C23);
-  static const darkSurfaceHigh = Color(0xFF26262F);
-  static const darkBorder = Color(0xFF2A2A33);
-  static const darkBorderSubtle = Color(0xFF1F1F27);
+  // Surfaces — Apple's iOS dark mode scale
+  static const bg = Color(0xFF000000);
+  static const surface = Color(0xFF1C1C1E);
+  static const surfaceElevated = Color(0xFF2C2C2E);
+  static const surfaceMuted = Color(0xFF1C1C1E);
+  static const surfaceTint = Color(0xFF1A1A1A);
 
-  static const darkTextPrimary = Color(0xFFF6F6F8);
-  static const darkTextSecondary = Color(0xFF9A9AA3);
-  static const darkTextTertiary = Color(0xFF5C5C66);
+  // Hairlines
+  static const border = Color(0xFF38383A);
+  static const borderSubtle = Color(0xFF2C2C2E);
 
-  // Light palette
+  // Ink — white scaling down
+  static const textPrimary = Color(0xFFFFFFFF);
+  static const textSecondary = Color(0xFF98989F);
+  static const textTertiary = Color(0xFF636366);
+
+  // Copper accent — original brand color pops against pure black
+  static const accent = Color(0xFFE5A06B);
+  static const accentDeep = Color(0xFFB6693A);
+  static const accentSoft = Color(0xFF332217);
+  static const accentInk = Color(0xFF1A0F05);
+
+  // Apple's systemGray fills for chips/pills
+  static const fillTertiary = Color(0xFF2C2C2E);
+  static const fillSecondary = Color(0xFF38383A);
+
+  // Light theme stub (kept for completeness — primary is dark)
   static const lightBg = Color(0xFFFAFAFA);
   static const lightSurface = Color(0xFFFFFFFF);
-  static const lightSurfaceElevated = Color(0xFFF4F4F6);
-  static const lightSurfaceHigh = Color(0xFFEDEDEF);
-  static const lightBorder = Color(0xFFE4E4E8);
-  static const lightBorderSubtle = Color(0xFFEEEEF1);
-
-  static const lightTextPrimary = Color(0xFF111114);
-  static const lightTextSecondary = Color(0xFF5B5B63);
-  static const lightTextTertiary = Color(0xFF8E8E96);
-
-  // Accent (shared)
-  static const accent = Color(0xFFE5A06B);
-  static const accentHover = Color(0xFFEEB281);
-  static const accentMuted = Color(0xFF3A2C20);
+  static const lightSurfaceElevated = Color(0xFFF2F2F7);
+  static const lightBorder = Color(0xFFE5E5EA);
+  static const lightBorderSubtle = Color(0xFFEEEEF0);
+  static const lightTextPrimary = Color(0xFF000000);
+  static const lightTextSecondary = Color(0xFF6E6E73);
+  static const lightTextTertiary = Color(0xFFAEAEB2);
 
   // Semantic
-  static const danger = Color(0xFFE05D5D);
-  static const success = Color(0xFF6FCF8E);
+  static const danger = Color(0xFFFF453A);
 }

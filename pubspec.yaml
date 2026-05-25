@@ -34,6 +34,12 @@ dependencies:
   # Sync backend
   pocketbase: ^0.21.0
 
+  # Desktop window chrome
+  window_manager: ^0.4.3
+
+  # Spotify-style artwork color extraction
+  palette_generator: ^0.3.3+5
+
   # UI
   google_fonts: ^6.2.1
   cupertino_icons: ^1.0.8
@@ -46,6 +52,16 @@ dependencies:
 
 dev_dependencies:
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.1
+
+flutter_launcher_icons:
+  image_path: "assets/brand_vinyl.png"
+  ios: true
+  remove_alpha_ios: true
+  windows:
+    generate: true
+    image_path: "assets/brand_vinyl.png"
+    icon_size: 256
 
 flutter:
   uses-material-design: true

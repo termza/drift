@@ -7,6 +7,9 @@ import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import 'artwork.dart';
 
+/// Apple-Music-style bottom player. White card floating just above the bottom
+/// edge, soft shadow underneath, rounded corners. Play and skip-forward
+/// buttons exposed; the rest is one tap away.
 class MiniPlayer extends ConsumerWidget {
   const MiniPlayer({super.key});
 
@@ -15,41 +18,52 @@ class MiniPlayer extends ConsumerWidget {
     final track = ref.watch(currentTrackProvider);
     if (track == null) return const SizedBox.shrink();
 
-    final snapAsync = ref.watch(playbackSnapshotProvider);
+    final snap = ref.watch(playbackSnapshotProvider).maybeWhen(
+          data: (s) => s,
+          orElse: () => null,
+        );
+    final playing = snap?.playing ?? false;
+
     final theme = Theme.of(context);
 
-    final snap = snapAsync.maybeWhen(data: (s) => s, orElse: () => null);
-    final fraction = (snap != null && snap.duration > Duration.zero)
-        ? snap.position.inMilliseconds / snap.duration.inMilliseconds
-        : 0.0;
-
-    return Material(
-      color: theme.colorScheme.surface,
-      child: InkWell(
-        onTap: () => _openPlayer(context),
-        child: Container(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        Insets.sm,
+        0,
+        Insets.sm,
+        Insets.sm,
+      ),
+      child: Material(
+        color: AppColors.surface,
+        elevation: 0,
+        borderRadius: BorderRadius.circular(Radii.md),
+        clipBehavior: Clip.antiAlias,
+        child: Ink(
           decoration: BoxDecoration(
-            border: Border(
-              top: BorderSide(
-                color: theme.colorScheme.outlineVariant,
-                width: 0.5,
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(Radii.md),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 28,
+                spreadRadius: -8,
+                offset: const Offset(0, 12),
               ),
-            ),
+            ],
           ),
-          padding: const EdgeInsets.fromLTRB(
-            Insets.sm,
-            Insets.sm,
-            Insets.xs,
-            Insets.sm,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
+          child: InkWell(
+            onTap: () => _openPlayer(context),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 12, 8),
+              child: Row(
                 children: [
                   Hero(
                     tag: 'now-playing-art',
-                    child: Artwork(track: track, size: 46),
+                    child: Artwork(
+                      track: track,
+                      size: 44,
+                      borderRadius: BorderRadius.circular(Radii.sm),
+                    ),
                   ),
                   const SizedBox(width: Insets.sm),
                   Expanded(
@@ -61,10 +75,12 @@ class MiniPlayer extends ConsumerWidget {
                           track.title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleSmall,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                         if (track.artist != null) ...[
-                          const SizedBox(height: 2),
+                          const SizedBox(height: 1),
                           Text(
                             track.artist!,
                             maxLines: 1,
@@ -75,35 +91,24 @@ class MiniPlayer extends ConsumerWidget {
                       ],
                     ),
                   ),
-                  IconButton(
-                    onPressed: () =>
-                        ref.read(audioPlayerProvider).skipBack(),
-                    icon: const Icon(Icons.replay_10_rounded, size: 24),
-                    splashRadius: 20,
-                    visualDensity: VisualDensity.compact,
+                  _IconBtn(
+                    icon: playing
+                        ? Icons.pause_rounded
+                        : Icons.play_arrow_rounded,
+                    size: 28,
+                    onTap: () =>
+                        ref.read(audioPlayerProvider).togglePlay(),
                   ),
-                  _PlayPauseButton(playing: snap?.playing ?? false),
-                  IconButton(
-                    onPressed: () =>
+                  const SizedBox(width: 2),
+                  _IconBtn(
+                    icon: Icons.forward_30_rounded,
+                    size: 26,
+                    onTap: () =>
                         ref.read(audioPlayerProvider).skipForward(),
-                    icon: const Icon(Icons.forward_30_rounded, size: 24),
-                    splashRadius: 20,
-                    visualDensity: VisualDensity.compact,
                   ),
                 ],
               ),
-              const SizedBox(height: Insets.xs),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(1),
-                child: LinearProgressIndicator(
-                  value: fraction.clamp(0.0, 1.0),
-                  minHeight: 2,
-                  backgroundColor: theme.colorScheme.outlineVariant,
-                  valueColor:
-                      const AlwaysStoppedAnimation(AppColors.accent),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -120,8 +125,8 @@ class MiniPlayer extends ConsumerWidget {
         transitionsBuilder: (_, anim, __, child) {
           final curved = CurvedAnimation(
             parent: anim,
-            curve: Motion.emphasized,
-            reverseCurve: Curves.easeInCubic,
+            curve: Motion.standard,
+            reverseCurve: Motion.exit,
           );
           return SlideTransition(
             position: Tween<Offset>(
@@ -136,28 +141,25 @@ class MiniPlayer extends ConsumerWidget {
   }
 }
 
-class _PlayPauseButton extends ConsumerWidget {
-  const _PlayPauseButton({required this.playing});
-  final bool playing;
+class _IconBtn extends StatelessWidget {
+  const _IconBtn({
+    required this.icon,
+    required this.onTap,
+    this.size = 26,
+  });
+  final IconData icon;
+  final VoidCallback onTap;
+  final double size;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return IconButton(
-      onPressed: () => ref.read(audioPlayerProvider).togglePlay(),
-      icon: AnimatedSwitcher(
-        duration: Motion.fast,
-        transitionBuilder: (c, a) => ScaleTransition(scale: a, child: c),
-        child: Icon(
-          playing
-              ? Icons.pause_circle_filled_rounded
-              : Icons.play_circle_filled_rounded,
-          key: ValueKey(playing),
-          size: 36,
-          color: AppColors.accent,
-        ),
+  Widget build(BuildContext context) {
+    return InkResponse(
+      onTap: onTap,
+      radius: 24,
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Icon(icon, size: size, color: AppColors.textPrimary),
       ),
-      splashRadius: 22,
-      visualDensity: VisualDensity.compact,
     );
   }
 }

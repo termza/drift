@@ -28,16 +28,20 @@ class AudioPlayerService {
   Stream<Duration?> get durationStream => _player.durationStream;
   Stream<bool> get playingStream => _player.playingStream;
 
-  /// Combined stream so the UI can rebuild from a single source.
+  /// Combined stream so the UI can rebuild from a single source. Includes
+  /// speed because [setSpeed] mutates the player without changing provider
+  /// identity — without speed in this stream, UI bound to it goes stale.
   Stream<PlaybackSnapshot> get snapshotStream =>
-      Rx.combineLatest3<Duration, Duration?, bool, PlaybackSnapshot>(
+      Rx.combineLatest4<Duration, Duration?, bool, double, PlaybackSnapshot>(
         _player.positionStream,
         _player.durationStream,
         _player.playingStream,
-        (pos, dur, playing) => PlaybackSnapshot(
+        _player.speedStream,
+        (pos, dur, playing, speed) => PlaybackSnapshot(
           position: pos,
           duration: dur ?? Duration.zero,
           playing: playing,
+          speed: speed,
         ),
       );
 
@@ -117,10 +121,12 @@ class PlaybackSnapshot {
   final Duration position;
   final Duration duration;
   final bool playing;
+  final double speed;
   const PlaybackSnapshot({
     required this.position,
     required this.duration,
     required this.playing,
+    this.speed = 1.0,
   });
 }
 

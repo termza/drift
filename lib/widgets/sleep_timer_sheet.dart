@@ -5,16 +5,10 @@ import '../state/providers.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 
-/// Bottom sheet for picking a sleep-timer duration. Tapping a chip starts the
-/// timer and closes the sheet; the active duration is highlighted.
 Future<void> showSleepTimerSheet(BuildContext context) {
   return showModalBottomSheet<void>(
     context: context,
-    backgroundColor: Theme.of(context).colorScheme.surface,
     isScrollControlled: true,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(Radii.xl)),
-    ),
     builder: (_) => const _SleepTimerSheet(),
   );
 }
@@ -40,10 +34,10 @@ class _SleepTimerSheet extends ConsumerWidget {
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(
-          Insets.lg,
-          Insets.md,
-          Insets.lg,
-          Insets.lg,
+          Insets.gutter,
+          Insets.sm,
+          Insets.gutter,
+          Insets.xl,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -54,13 +48,13 @@ class _SleepTimerSheet extends ConsumerWidget {
                 width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.outlineVariant,
+                  color: AppColors.border,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
             ),
             const SizedBox(height: Insets.md),
-            Text('Sleep Timer', style: theme.textTheme.titleLarge),
+            Text('Sleep Timer', style: theme.textTheme.headlineLarge),
             const SizedBox(height: 4),
             Text(
               timer.isActive && remaining != null
@@ -86,16 +80,20 @@ class _SleepTimerSheet extends ConsumerWidget {
                   ),
               ],
             ),
-            const SizedBox(height: Insets.md),
-            if (timer.isActive)
-              OutlinedButton.icon(
+            if (timer.isActive) ...[
+              const SizedBox(height: Insets.lg),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.fillTertiary,
+                  foregroundColor: AppColors.danger,
+                ),
                 onPressed: () {
                   timer.cancel();
                   Navigator.of(context).pop();
                 },
-                icon: const Icon(Icons.close_rounded, size: 18),
-                label: const Text('Cancel timer'),
+                child: const Text('Cancel timer'),
               ),
+            ],
           ],
         ),
       ),
@@ -128,29 +126,25 @@ class _Chip extends StatelessWidget {
     final theme = Theme.of(context);
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(Radii.xl),
+      borderRadius: BorderRadius.circular(Radii.sm + 2),
       child: Container(
         padding: const EdgeInsets.symmetric(
-          horizontal: Insets.md,
-          vertical: 10,
+          horizontal: 16,
+          vertical: 12,
         ),
         decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(Radii.sm + 2),
           color: selected
-              ? AppColors.accent.withValues(alpha: 0.15)
-              : theme.colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(Radii.xl),
-          border: Border.all(
-            color: selected
-                ? AppColors.accent.withValues(alpha: 0.55)
-                : theme.colorScheme.outlineVariant,
-            width: 0.6,
-          ),
+              ? AppColors.accentSoft
+              : AppColors.fillTertiary,
         ),
         child: Text(
           label,
           style: theme.textTheme.titleSmall?.copyWith(
-            color: selected ? AppColors.accent : null,
-            fontWeight: FontWeight.w500,
+            color: selected
+                ? AppColors.accent
+                : AppColors.textPrimary,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ),

@@ -25,8 +25,9 @@ class AppDatabase {
     final db = await databaseFactory.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 1,
+        version: 2,
         onCreate: _onCreate,
+        onUpgrade: _onUpgrade,
       ),
     );
     return AppDatabase._(db);
@@ -57,5 +58,28 @@ class AppDatabase {
     ''');
 
     await db.execute('CREATE INDEX idx_tracks_added ON tracks(added_at DESC)');
+
+    await _createFavorites(db);
+  }
+
+  static Future<void> _onUpgrade(
+    Database db,
+    int from,
+    int to,
+  ) async {
+    if (from < 2) await _createFavorites(db);
+  }
+
+  static Future<void> _createFavorites(Database db) async {
+    await db.execute('''
+      CREATE TABLE favorites (
+        track_id TEXT PRIMARY KEY,
+        added_at INTEGER NOT NULL,
+        FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX idx_favorites_added ON favorites(added_at DESC)',
+    );
   }
 }

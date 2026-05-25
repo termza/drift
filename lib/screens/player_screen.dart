@@ -6,85 +6,90 @@ import '../state/providers.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../widgets/artwork.dart';
+import '../widgets/artwork_palette.dart';
 import '../widgets/scrub_bar.dart';
 import '../widgets/sleep_timer_sheet.dart';
 
+/// Apple-Music-style Now Playing. Big centered artwork, bold title block
+/// below, slim scrubber, prominent transport row, secondary controls in a
+/// row at the bottom.
 class PlayerScreen extends ConsumerWidget {
   const PlayerScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final track = ref.watch(currentTrackProvider);
-    final theme = Theme.of(context);
 
     if (track == null) {
-      return const Scaffold(body: Center(child: Text('Nothing playing')));
+      return const Scaffold(
+        body: Center(child: Text('Nothing playing')),
+      );
     }
 
+    final palette = ref.watch(artworkPaletteProvider(track)).maybeWhen(
+          data: (p) => p,
+          orElse: () => ArtworkPalette.fallback,
+        );
+
     return Scaffold(
+      backgroundColor: AppColors.bg,
       body: Stack(
         children: [
-          const _Backdrop(),
+          _Backdrop(palette: palette),
           SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: Insets.lg),
+            child: LayoutBuilder(
+              builder: (context, c) {
+            // Reserve space for everything below the artwork before sizing it.
+            const reservedBelow = 340.0;
+            final byWidth =
+                (c.maxWidth - Insets.gutter * 2).clamp(180.0, 380.0);
+            final byHeight = (c.maxHeight - reservedBelow)
+                .clamp(180.0, 380.0);
+            final artSize = byWidth < byHeight ? byWidth : byHeight;
+
+            return Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: Insets.gutter,
+              ),
               child: Column(
                 children: [
-                  const SizedBox(height: Insets.xs),
-                  _TopBar(),
-                  const Spacer(flex: 3),
+                  const SizedBox(height: 4),
+                  const _TopBar(),
+                  const Spacer(flex: 2),
                   Hero(
                     tag: 'now-playing-art',
                     child: Container(
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(Radii.xxl),
+                        borderRadius: BorderRadius.circular(Radii.lg),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.55),
-                            blurRadius: 80,
-                            spreadRadius: -16,
-                            offset: const Offset(0, 30),
-                          ),
-                          BoxShadow(
-                            color: AppColors.accent.withValues(alpha: 0.08),
+                            color: Colors.black.withValues(alpha: 0.15),
                             blurRadius: 60,
-                            spreadRadius: -20,
-                            offset: const Offset(0, 0),
+                            spreadRadius: -10,
+                            offset: const Offset(0, 24),
                           ),
                         ],
                       ),
                       child: Artwork(
                         track: track,
-                        size: 300,
-                        borderRadius: BorderRadius.circular(Radii.xxl),
+                        size: artSize,
+                        borderRadius: BorderRadius.circular(Radii.lg),
                       ),
                     ),
                   ),
-                  const Spacer(flex: 3),
-                  Text(
-                    track.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.headlineMedium,
-                  ),
-                  if (track.artist != null) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      track.artist!,
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                  ],
-                  const SizedBox(height: Insets.lg + 4),
-                  const _ScrubSection(),
-                  const SizedBox(height: Insets.md),
-                  const _TransportControls(),
                   const Spacer(flex: 2),
-                  const _BottomBar(),
+                  _TitleBlock(title: track.title, artist: track.artist),
+                  const SizedBox(height: Insets.md),
+                  const _ScrubSection(),
+                  const SizedBox(height: 12),
+                  const _Transport(),
+                  const Spacer(flex: 1),
+                  const _Footer(),
                   const SizedBox(height: Insets.sm),
                 ],
               ),
+            );
+          },
             ),
           ),
         ],
@@ -94,22 +99,24 @@ class PlayerScreen extends ConsumerWidget {
 }
 
 class _Backdrop extends StatelessWidget {
-  const _Backdrop();
+  const _Backdrop({required this.palette});
+  final ArtworkPalette palette;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return IgnorePointer(
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 480),
+        curve: Curves.easeOutCubic,
         decoration: BoxDecoration(
-          gradient: RadialGradient(
-            center: const Alignment(0, -0.6),
-            radius: 1.1,
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
             colors: [
-              AppColors.accent.withValues(alpha: 0.10),
-              theme.scaffoldBackgroundColor.withValues(alpha: 0.0),
+              palette.top,
+              palette.bottom,
             ],
-            stops: const [0.0, 0.7],
+            stops: const [0.0, 0.78],
           ),
         ),
       ),
@@ -117,47 +124,169 @@ class _Backdrop extends StatelessWidget {
   }
 }
 
-class _TopBar extends StatelessWidget {
+class _TopBar extends ConsumerWidget {
+  const _TopBar();
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final track = ref.watch(currentTrackProvider);
     return Row(
       children: [
-        _RoundIcon(
-          icon: Icons.keyboard_arrow_down_rounded,
+        InkResponse(
           onTap: () => Navigator.of(context).maybePop(),
-        ),
-        const Spacer(),
-        Text(
-          'NOW PLAYING',
-          style: theme.textTheme.labelSmall?.copyWith(
-            letterSpacing: 1.6,
-            fontSize: 10.5,
+          radius: 22,
+          child: const Padding(
+            padding: EdgeInsets.all(Insets.xs),
+            child: Icon(Icons.keyboard_arrow_down_rounded, size: 28),
           ),
         ),
         const Spacer(),
-        _RoundIcon(
-          icon: Icons.more_horiz_rounded,
-          onTap: () {},
+        Text(
+          'Now Playing',
+          style: theme.textTheme.titleMedium?.copyWith(
+            color: AppColors.textSecondary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const Spacer(),
+        _MoreMenu(trackId: track?.id),
+      ],
+    );
+  }
+}
+
+class _MoreMenu extends ConsumerWidget {
+  const _MoreMenu({required this.trackId});
+  final String? trackId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return PopupMenuButton<String>(
+      tooltip: 'More',
+      offset: const Offset(0, 36),
+      position: PopupMenuPosition.under,
+      icon: const Padding(
+        padding: EdgeInsets.all(Insets.xs),
+        child: Icon(Icons.more_horiz_rounded, size: 24),
+      ),
+      onSelected: (v) async {
+        switch (v) {
+          case 'restart':
+            await ref.read(audioPlayerProvider).seek(Duration.zero);
+          case 'mark_done':
+            if (trackId != null) {
+              await ref.read(progressStoreProvider).markCompleted(trackId!);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Marked as played')),
+                );
+              }
+            }
+          case 'remove':
+            if (trackId != null) {
+              await ref.read(libraryServiceProvider).remove(trackId!);
+              ref.invalidate(libraryProvider);
+              ref.invalidate(allProgressProvider);
+              ref.read(currentTrackProvider.notifier).state = null;
+              await ref.read(audioPlayerProvider).pause();
+              if (context.mounted) Navigator.of(context).maybePop();
+            }
+        }
+      },
+      itemBuilder: (_) => [
+        const PopupMenuItem(
+          value: 'restart',
+          height: 42,
+          child: _MenuItem(
+            icon: Icons.restart_alt_rounded,
+            label: 'Restart track',
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'mark_done',
+          height: 42,
+          child: _MenuItem(
+            icon: Icons.check_circle_outline_rounded,
+            label: 'Mark as played',
+          ),
+        ),
+        const PopupMenuDivider(height: 0.5),
+        const PopupMenuItem(
+          value: 'remove',
+          height: 42,
+          child: _MenuItem(
+            icon: Icons.delete_outline_rounded,
+            label: 'Remove from library',
+            danger: true,
+          ),
         ),
       ],
     );
   }
 }
 
-class _RoundIcon extends StatelessWidget {
-  const _RoundIcon({required this.icon, required this.onTap});
+class _MenuItem extends StatelessWidget {
+  const _MenuItem({
+    required this.icon,
+    required this.label,
+    this.danger = false,
+  });
   final IconData icon;
-  final VoidCallback onTap;
+  final String label;
+  final bool danger;
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      customBorder: const CircleBorder(),
-      child: Padding(
-        padding: const EdgeInsets.all(Insets.xs),
-        child: Icon(icon, size: 24),
+    final theme = Theme.of(context);
+    final color = danger ? AppColors.danger : AppColors.textPrimary;
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: color),
+        const SizedBox(width: Insets.sm),
+        Text(
+          label,
+          style: theme.textTheme.titleSmall?.copyWith(color: color),
+        ),
+      ],
+    );
+  }
+}
+
+class _TitleBlock extends StatelessWidget {
+  const _TitleBlock({required this.title, required this.artist});
+  final String title;
+  final String? artist;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: Insets.xs),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.headlineLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          if (artist != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              artist!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: AppColors.accent,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -169,15 +298,14 @@ class _ScrubSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final snapAsync = ref.watch(playbackSnapshotProvider);
-    final snap = snapAsync.maybeWhen(
-      data: (s) => s,
-      orElse: () => const PlaybackSnapshot(
-        position: Duration.zero,
-        duration: Duration.zero,
-        playing: false,
-      ),
-    );
+    final snap = ref.watch(playbackSnapshotProvider).maybeWhen(
+          data: (s) => s,
+          orElse: () => const PlaybackSnapshot(
+            position: Duration.zero,
+            duration: Duration.zero,
+            playing: false,
+          ),
+        );
 
     return Column(
       children: [
@@ -194,13 +322,15 @@ class _ScrubSection extends ConsumerWidget {
             children: [
               Text(
                 _fmt(snap.position),
-                style: theme.textTheme.labelMedium?.copyWith(
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: AppColors.textSecondary,
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
               Text(
                 '-${_fmt(_remaining(snap))}',
-                style: theme.textTheme.labelMedium?.copyWith(
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: AppColors.textSecondary,
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
@@ -217,82 +347,47 @@ Duration _remaining(PlaybackSnapshot s) {
   return r.isNegative ? Duration.zero : r;
 }
 
-class _TransportControls extends ConsumerWidget {
-  const _TransportControls();
+class _Transport extends ConsumerWidget {
+  const _Transport();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final snap = ref.watch(playbackSnapshotProvider);
-    final playing =
-        snap.maybeWhen(data: (s) => s.playing, orElse: () => false);
+    final playing = ref.watch(playbackSnapshotProvider).maybeWhen(
+          data: (s) => s.playing,
+          orElse: () => false,
+        );
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
-        _GhostButton(icon: Icons.skip_previous_rounded, size: 28, onTap: () {}),
-        _GhostButton(
-          icon: Icons.replay_10_rounded,
-          size: 32,
-          onTap: () => ref.read(audioPlayerProvider).skipBack(),
+        _Ghost(icon: Icons.skip_previous_rounded, size: 38, onTap: () {}),
+        InkResponse(
+          onTap: () => ref.read(audioPlayerProvider).togglePlay(),
+          radius: 48,
+          child: AnimatedSwitcher(
+            duration: Motion.fast,
+            transitionBuilder: (c, a) => ScaleTransition(scale: a, child: c),
+            child: Icon(
+              playing
+                  ? Icons.pause_circle_filled_rounded
+                  : Icons.play_circle_filled_rounded,
+              key: ValueKey(playing),
+              size: 72,
+              color: AppColors.textPrimary,
+            ),
+          ),
         ),
-        _PlayButton(playing: playing),
-        _GhostButton(
-          icon: Icons.forward_30_rounded,
-          size: 32,
-          onTap: () => ref.read(audioPlayerProvider).skipForward(),
-        ),
-        _GhostButton(icon: Icons.skip_next_rounded, size: 28, onTap: () {}),
+        _Ghost(icon: Icons.skip_next_rounded, size: 38, onTap: () {}),
       ],
     );
   }
 }
 
-class _PlayButton extends ConsumerWidget {
-  const _PlayButton({required this.playing});
-  final bool playing;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    return InkWell(
-      onTap: () => ref.read(audioPlayerProvider).togglePlay(),
-      customBorder: const CircleBorder(),
-      child: AnimatedContainer(
-        duration: Motion.fast,
-        width: 76,
-        height: 76,
-        decoration: BoxDecoration(
-          color: theme.colorScheme.primary,
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.accent.withValues(alpha: 0.30),
-              blurRadius: 28,
-              spreadRadius: -4,
-              offset: const Offset(0, 10),
-            ),
-          ],
-        ),
-        child: AnimatedSwitcher(
-          duration: Motion.fast,
-          transitionBuilder: (c, a) => ScaleTransition(scale: a, child: c),
-          child: Icon(
-            playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-            key: ValueKey(playing),
-            size: 38,
-            color: const Color(0xFF1A0F05),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _GhostButton extends StatelessWidget {
-  const _GhostButton({
+class _Ghost extends StatelessWidget {
+  const _Ghost({
     required this.icon,
     required this.onTap,
-    this.size = 28,
+    this.size = 32,
   });
   final IconData icon;
   final VoidCallback onTap;
@@ -300,58 +395,76 @@ class _GhostButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return InkWell(
+    return InkResponse(
       onTap: onTap,
-      customBorder: const CircleBorder(),
+      radius: 32,
       child: Padding(
         padding: const EdgeInsets.all(Insets.sm),
-        child: Icon(
-          icon,
-          size: size,
-          color: theme.colorScheme.onSurface,
-        ),
+        child: Icon(icon, size: size, color: AppColors.textPrimary),
       ),
     );
   }
 }
 
-class _BottomBar extends ConsumerWidget {
-  const _BottomBar();
+class _Footer extends ConsumerWidget {
+  const _Footer();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final speed = ref.watch(audioPlayerProvider).speed;
+    // Speed comes through the snapshot stream so changes rebuild the UI.
+    final speed = ref.watch(playbackSnapshotProvider).maybeWhen(
+          data: (s) => s.speed,
+          orElse: () => 1.0,
+        );
     final sleep = ref.watch(sleepTimerProvider);
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        _SpeedPill(speed: speed),
-        _SleepBtn(active: sleep.isActive),
-        _IconBtn(
-            icon: Icons.bookmark_outline_rounded, tooltip: 'Bookmark'),
-        _IconBtn(icon: Icons.queue_music_rounded, tooltip: 'Queue'),
-      ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: Insets.sm),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          _SkipBtn(
+            icon: Icons.replay_10_rounded,
+            label: '10',
+            onTap: () => ref.read(audioPlayerProvider).skipBack(),
+          ),
+          _SpeedPill(speed: speed),
+          _FooterIcon(
+            icon: sleep.isActive
+                ? Icons.bedtime_rounded
+                : Icons.bedtime_outlined,
+            accent: sleep.isActive,
+            onTap: () => showSleepTimerSheet(context),
+          ),
+          _SkipBtn(
+            icon: Icons.forward_30_rounded,
+            label: '30',
+            onTap: () => ref.read(audioPlayerProvider).skipForward(),
+          ),
+        ],
+      ),
     );
   }
 }
 
-class _SleepBtn extends StatelessWidget {
-  const _SleepBtn({required this.active});
-  final bool active;
+class _SkipBtn extends StatelessWidget {
+  const _SkipBtn({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return IconButton(
-      onPressed: () => showSleepTimerSheet(context),
-      icon: Icon(
-        active ? Icons.bedtime_rounded : Icons.bedtime_outlined,
-        size: 22,
-        color: active ? AppColors.accent : null,
+    return InkResponse(
+      onTap: onTap,
+      radius: 24,
+      child: Padding(
+        padding: const EdgeInsets.all(Insets.xs),
+        child: Icon(icon, size: 28, color: AppColors.textPrimary),
       ),
-      tooltip: 'Sleep timer',
-      splashRadius: 22,
-      visualDensity: VisualDensity.compact,
     );
   }
 }
@@ -363,26 +476,25 @@ class _SpeedPill extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final label =
+        '${speed.toStringAsFixed(2).replaceFirst(RegExp(r'0$'), '')}×';
     return InkWell(
       onTap: () => _cycle(ref, speed),
-      borderRadius: BorderRadius.circular(Radii.xl),
+      borderRadius: BorderRadius.circular(Radii.sm),
       child: Container(
         padding: const EdgeInsets.symmetric(
-          horizontal: Insets.sm,
-          vertical: 6,
+          horizontal: 12,
+          vertical: 7,
         ),
         decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(Radii.xl),
-          border: Border.all(
-            color: theme.colorScheme.outlineVariant,
-            width: 0.5,
-          ),
+          color: AppColors.fillTertiary,
+          borderRadius: BorderRadius.circular(Radii.sm),
         ),
         child: Text(
-          '${speed.toStringAsFixed(2).replaceFirst(RegExp(r'0$'), '')}×',
-          style: theme.textTheme.labelLarge?.copyWith(
-            fontWeight: FontWeight.w500,
+          label,
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w600,
             fontFeatures: const [FontFeature.tabularFigures()],
           ),
         ),
@@ -398,19 +510,30 @@ class _SpeedPill extends ConsumerWidget {
   }
 }
 
-class _IconBtn extends StatelessWidget {
-  const _IconBtn({required this.icon, this.tooltip});
+class _FooterIcon extends StatelessWidget {
+  const _FooterIcon({
+    required this.icon,
+    required this.onTap,
+    this.accent = false,
+  });
   final IconData icon;
-  final String? tooltip;
+  final VoidCallback onTap;
+  final bool accent;
 
   @override
   Widget build(BuildContext context) {
-    return IconButton(
-      onPressed: () {},
-      icon: Icon(icon, size: 22),
-      tooltip: tooltip,
-      splashRadius: 22,
-      visualDensity: VisualDensity.compact,
+    return InkResponse(
+      onTap: onTap,
+      radius: 22,
+      child: Padding(
+        padding: const EdgeInsets.all(Insets.xs),
+        child: Icon(
+          icon,
+          size: 22,
+          color:
+              accent ? AppColors.accent : AppColors.textPrimary,
+        ),
+      ),
     );
   }
 }

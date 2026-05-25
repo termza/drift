@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../state/providers.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_spacing.dart';
+import '../widgets/artwork.dart';
 
 class SignInScreen extends ConsumerStatefulWidget {
   const SignInScreen({super.key});
@@ -43,7 +46,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     final server = _serverCtl.text.trim();
 
     if (email.isEmpty || pass.isEmpty || server.isEmpty) {
-      setState(() => _error = 'Server URL, email, and password are required');
+      setState(() => _error = 'Server, email, and password are required');
       return;
     }
 
@@ -60,7 +63,6 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
         await auth.signIn(email, pass);
       }
       if (!mounted) return;
-      // Sync service rebuilds because auth notified — kick off reconcile.
       unawaited(ref.read(syncServiceProvider).reconcile());
       Navigator.of(context).pop(true);
     } catch (e) {
@@ -80,10 +82,10 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     }
     if (s.contains('400') || s.contains('Failed to authenticate')) {
       return _signUp
-          ? 'Sign-up failed. Email may already be registered or the password is too short.'
+          ? 'Sign-up failed. Email may already be registered.'
           : 'Wrong email or password.';
     }
-    return 'Something went wrong. ($s)';
+    return 'Something went wrong.';
   }
 
   @override
@@ -91,141 +93,187 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          onPressed: () => Navigator.of(context).maybePop(),
-          icon: const Icon(Icons.close_rounded),
-        ),
-      ),
+      backgroundColor: AppColors.bg,
       body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Icon(
-                    Icons.cloud_sync_rounded,
-                    size: 44,
-                    color: theme.colorScheme.primary,
+        child: Stack(
+          children: [
+            Positioned(
+              top: 8,
+              right: 8,
+              child: InkResponse(
+                radius: 22,
+                onTap: () => Navigator.of(context).maybePop(),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: const BoxDecoration(
+                    color: AppColors.fillTertiary,
+                    shape: BoxShape.circle,
                   ),
-                  const SizedBox(height: 20),
-                  Text(
-                    _signUp ? 'Create account' : 'Sign in',
-                    style: theme.textTheme.headlineMedium,
-                    textAlign: TextAlign.center,
+                  child: const Icon(
+                    Icons.close_rounded,
+                    size: 20,
+                    color: AppColors.textSecondary,
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Connect to your sync server to keep playback progress '
-                    'in sync between iOS and Windows.',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 32),
-                  _Label('Server URL'),
-                  TextField(
-                    controller: _serverCtl,
-                    keyboardType: TextInputType.url,
-                    autocorrect: false,
-                    decoration: const InputDecoration(
-                      hintText: 'https://sync.example.com',
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  _Label('Email'),
-                  TextField(
-                    controller: _emailCtl,
-                    keyboardType: TextInputType.emailAddress,
-                    autocorrect: false,
-                    decoration:
-                        const InputDecoration(hintText: 'you@example.com'),
-                  ),
-                  const SizedBox(height: 16),
-                  _Label('Password'),
-                  TextField(
-                    controller: _passCtl,
-                    obscureText: true,
-                    decoration:
-                        const InputDecoration(hintText: '••••••••'),
-                    onSubmitted: (_) => _busy ? null : _submit(),
-                  ),
-                  if (_error != null) ...[
-                    const SizedBox(height: 16),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.error.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: theme.colorScheme.error.withValues(alpha: 0.3),
-                        ),
-                      ),
-                      child: Text(
-                        _error!,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.error,
-                        ),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 24),
-                  FilledButton(
-                    onPressed: _busy ? null : _submit,
-                    child: _busy
-                        ? const SizedBox(
-                            height: 18,
-                            width: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.4,
-                              color: Color(0xFF1A0F05),
-                            ),
-                          )
-                        : Text(_signUp ? 'Create account' : 'Sign in'),
-                  ),
-                  const SizedBox(height: 12),
-                  TextButton(
-                    onPressed: _busy
-                        ? null
-                        : () => setState(() {
-                              _signUp = !_signUp;
-                              _error = null;
-                            }),
-                    child: Text(
-                      _signUp
-                          ? 'Have an account? Sign in'
-                          : 'New here? Create an account',
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
-          ),
+            Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(
+                  Insets.gutter,
+                  Insets.xxxl,
+                  Insets.gutter,
+                  Insets.xl,
+                ),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 380),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Center(
+                        child: BrandMark(size: 72, glow: true),
+                      ),
+                      const SizedBox(height: Insets.xl),
+                      Text(
+                        _signUp ? 'Create account' : 'Sign in',
+                        style: theme.textTheme.displayMedium,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: Insets.xs),
+                      Text(
+                        'Connect to your sync server to keep playback '
+                        'in sync across devices.',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                      const SizedBox(height: Insets.xl),
+                      _Field(
+                        label: 'Server URL',
+                        controller: _serverCtl,
+                        hint: 'https://sync.example.com',
+                        keyboardType: TextInputType.url,
+                      ),
+                      const SizedBox(height: Insets.md),
+                      _Field(
+                        label: 'Email',
+                        controller: _emailCtl,
+                        hint: 'you@example.com',
+                        keyboardType: TextInputType.emailAddress,
+                      ),
+                      const SizedBox(height: Insets.md),
+                      _Field(
+                        label: 'Password',
+                        controller: _passCtl,
+                        hint: '••••••••',
+                        obscure: true,
+                        onSubmitted: (_) => _busy ? null : _submit(),
+                      ),
+                      if (_error != null) ...[
+                        const SizedBox(height: Insets.md),
+                        Container(
+                          padding: const EdgeInsets.all(Insets.sm + 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.danger.withValues(alpha: 0.08),
+                            borderRadius:
+                                BorderRadius.circular(Radii.sm),
+                          ),
+                          child: Text(
+                            _error!,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: AppColors.danger,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: Insets.xl),
+                      FilledButton(
+                        onPressed: _busy ? null : _submit,
+                        child: _busy
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.2,
+                                  color: AppColors.accentInk,
+                                ),
+                              )
+                            : Text(
+                                _signUp
+                                    ? 'Create account'
+                                    : 'Sign in',
+                              ),
+                      ),
+                      const SizedBox(height: Insets.sm),
+                      Center(
+                        child: TextButton(
+                          onPressed: _busy
+                              ? null
+                              : () => setState(() {
+                                    _signUp = !_signUp;
+                                    _error = null;
+                                  }),
+                          child: Text(
+                            _signUp
+                                ? 'Have an account? Sign in'
+                                : 'New here? Create an account',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _Label extends StatelessWidget {
-  const _Label(this.text);
-  final String text;
+class _Field extends StatelessWidget {
+  const _Field({
+    required this.label,
+    required this.controller,
+    required this.hint,
+    this.keyboardType,
+    this.obscure = false,
+    this.onSubmitted,
+  });
+
+  final String label;
+  final TextEditingController controller;
+  final String hint;
+  final TextInputType? keyboardType;
+  final bool obscure;
+  final ValueChanged<String>? onSubmitted;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
-      child: Text(
-        text,
-        style: theme.textTheme.labelMedium?.copyWith(
-          letterSpacing: 0.4,
-          color: theme.textTheme.bodyMedium?.color,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
+          child: Text(
+            label,
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: AppColors.textSecondary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ),
-      ),
+        TextField(
+          controller: controller,
+          keyboardType: keyboardType,
+          obscureText: obscure,
+          autocorrect: false,
+          onSubmitted: onSubmitted,
+          decoration: InputDecoration(hintText: hint),
+        ),
+      ],
     );
   }
 }
-
