@@ -1,0 +1,64 @@
+# Codemagic build pipeline for Audio Listen.
+#
+# Produces an UNSIGNED iOS IPA on every push, suitable for sideloading via
+# AltStore (which re-signs with your free Apple ID on install). No paid Apple
+# Developer account required.
+#
+# Free tier (as of 2026): 500 macOS-M-instance minutes/month. A clean build
+# takes ~10-12 minutes. Plenty for personal use.
+#
+# Setup:
+#   1. Push this repo to GitHub
+#   2. Sign up at https://codemagic.io (use the GitHub login)
+#   3. "Add application" → pick this repo → it detects this file automatically
+#   4. Start a build → grab the IPA artifact when done
+workflows:
+  ios-sideload:
+    name: iOS Sideload Build (unsigned)
+    instance_type: mac_mini_m2
+    max_build_duration: 30
+    environment:
+      flutter: 3.44.0
+      xcode: latest
+      cocoapods: default
+    cache:
+      cache_paths:
+        - ~/Library/Caches/CocoaPods
+        - ~/.pub-cache
+        - $FLUTTER_ROOT/.pub-cache
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: 'main'
+          include: true
+        - pattern: 'master'
+          include: true
+    scripts:
+      - name: Flutter packages
+        script: |
+          flutter pub get
+      - name: Pod install
+        script: |
+          cd ios
+          pod install --repo-update
+      - name: Build unsigned IPA
+        script: |
+          # --no-codesign skips signing entirely — produces an .app bundle
+          # we'll wrap into an IPA ourselves so AltStore can re-sign.
+          flutter build ios --release --no-codesign
+
+          cd build/ios/iphoneos
+          mkdir -p Payload
+          cp -r Runner.app Payload/
+          zip -qry ../../../audio_listen.ipa Payload
+          rm -rf Payload
+    artifacts:
+      - audio_listen.ipa
+    publishing:
+      email:
+        recipients:
+          - flydanielsmith@gmail.com
+        notify:
+          success: true
+          failure: true
