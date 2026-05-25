@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:audiotags/audiotags.dart';
+import 'package:audio_metadata_reader/audio_metadata_reader.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -81,20 +81,16 @@ class LibraryService {
     String? artworkPath;
 
     try {
-      final tag = await AudioTags.read(file.path);
-      if (tag != null) {
-        if ((tag.title ?? '').trim().isNotEmpty) title = tag.title!.trim();
-        artist = (tag.trackArtist ?? '').trim().isEmpty
-            ? null
-            : tag.trackArtist!.trim();
-        album =
-            (tag.album ?? '').trim().isEmpty ? null : tag.album!.trim();
-        if (tag.duration != null) {
-          duration = Duration(seconds: tag.duration!);
-        }
-        if (tag.pictures.isNotEmpty) {
-          artworkPath = await _saveArtwork(id, tag.pictures.first.bytes);
-        }
+      final meta = readMetadata(file, getImage: true);
+      final t = (meta.title ?? '').trim();
+      if (t.isNotEmpty) title = t;
+      final ar = (meta.artist ?? '').trim();
+      if (ar.isNotEmpty) artist = ar;
+      final al = (meta.album ?? '').trim();
+      if (al.isNotEmpty) album = al;
+      if (meta.duration != null) duration = meta.duration;
+      if (meta.pictures.isNotEmpty) {
+        artworkPath = await _saveArtwork(id, meta.pictures.first.bytes);
       }
     } catch (_) {
       // Metadata read failures are non-fatal; we still index the file.

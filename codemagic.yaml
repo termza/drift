@@ -44,6 +44,7 @@ workflows:
           pod install --repo-update
       - name: Build unsigned IPA
         script: |
+          set -euo pipefail
           # --no-codesign skips signing entirely — produces an .app bundle
           # we'll wrap into an IPA ourselves so AltStore can re-sign.
           flutter build ios --release --no-codesign
@@ -51,7 +52,7 @@ workflows:
           cd build/ios/iphoneos
           mkdir -p Payload
           cp -r Runner.app Payload/
-          zip -qry ../../../audio_listen.ipa Payload
+          zip -qry "$CM_BUILD_DIR/audio_listen.ipa" Payload
           rm -rf Payload
     artifacts:
       - audio_listen.ipa
