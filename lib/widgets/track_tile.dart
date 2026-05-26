@@ -24,6 +24,7 @@ class TrackTile extends ConsumerWidget {
     super.key,
     required this.track,
     required this.onTap,
+    this.onLongPress,
     this.isCurrent = false,
     this.isPlaying = false,
     this.progressFraction,
@@ -31,6 +32,7 @@ class TrackTile extends ConsumerWidget {
 
   final Track track;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
   final bool isCurrent;
   final bool isPlaying;
 
@@ -50,6 +52,7 @@ class TrackTile extends ConsumerWidget {
 
     return InkWell(
       onTap: onTap,
+      onLongPress: onLongPress,
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: Insets.gutter,

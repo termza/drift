@@ -64,7 +64,14 @@ class CloudStatusScreen extends ConsumerWidget {
                   host: _hostFromUrl(auth.serverUrl),
                   email: auth.userEmail,
                   onSync: auth.isSignedIn
-                      ? () => ref.read(syncServiceProvider).reconcile()
+                      ? () async {
+                          final sync = ref.read(trackSyncServiceProvider);
+                          await ref.read(syncServiceProvider).reconcile();
+                          await sync.pullCatalog();
+                          await sync.syncAllLocal();
+                          ref.invalidate(libraryProvider);
+                          ref.invalidate(cacheSizeProvider);
+                        }
                       : null,
                 ),
               ),

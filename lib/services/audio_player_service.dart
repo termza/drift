@@ -117,24 +117,48 @@ class AudioPlayerService {
   // ---------------------------------------------------------------------------
 
   Future<void> load(Track track, {bool autoplay = true}) async {
-    // Cloud-only entry → download to local storage before we can play.
+    // Pick the best audio source we can find, in order of preference:
+    //   1. Local file (instant, offline, exists)
+    //   2. PocketBase HTTP stream (instant playback, no 500MB pre-download)
+    //   3. Download then play (last-resort fallback)
     var effective = track;
-    if (!effective.isLocal) {
-      final localPath = await _sync.downloadFile(effective);
-      effective = effective.copyWith(
-        filePath: localPath,
-        cloudState: TrackCloudState.uploaded,
-      );
-    }
+    AudioSource? source;
+    final tag = MediaItem(
+      id: effective.id,
+      title: effective.title,
+      artist: effective.artist,
+      album: effective.album,
+      duration: effective.duration,
+    );
 
-    // Guard before handing the path to AVPlayer — a missing file on iOS
-    // surfaces as the unhelpful AVFoundation error -11800. Catching it
-    // here lets us tell the user *why* (and to re-import) instead.
-    if (!await File(effective.filePath).exists()) {
+    if (effective.isLocal && await File(effective.filePath).exists()) {
+      source = AudioSource.file(effective.filePath, tag: tag);
+    } else if (effective.cloudRecordId != null) {
+      // Try streaming the cloud copy. Way faster than downloading multi-
+      // hundred-MB audiobooks before play starts.
+      final streamUri = await _sync.streamUrl(effective);
+      if (streamUri != null) {
+        source = AudioSource.uri(streamUri, tag: tag);
+      } else {
+        // Streaming wasn't reachable — fall back to a full download.
+        final localPath = await _sync.downloadFile(effective);
+        effective = effective.copyWith(
+          filePath: localPath,
+          cloudState: TrackCloudState.uploaded,
+        );
+        source = AudioSource.file(localPath, tag: tag);
+      }
+    } else if (effective.isLocal) {
+      // Local-only but the file is gone — surface a friendly error rather
+      // than the cryptic AVFoundation -11800.
       throw StateError(
         'Audio file is missing on disk:\n${effective.filePath}\n\n'
         'On iOS this usually means the OS purged the temporary import '
         'directory. Re-import the file from Library → + to restore it.',
+      );
+    } else {
+      throw StateError(
+        'No playable source: track has no local file and no cloud copy.',
       );
     }
 
@@ -145,19 +169,7 @@ class AudioPlayerService {
         (saved != null && !saved.completed) ? saved.position : null;
     initial = _maybeAutoRewind(initial, saved);
 
-    await _player.setAudioSource(
-      AudioSource.file(
-        effective.filePath,
-        tag: MediaItem(
-          id: effective.id,
-          title: effective.title,
-          artist: effective.artist,
-          album: effective.album,
-          duration: effective.duration,
-        ),
-      ),
-      initialPosition: initial,
-    );
+    await _player.setAudioSource(source, initialPosition: initial);
 
     await _loadChapters(effective);
     await _player.setSpeed(_prefs.current.speed);

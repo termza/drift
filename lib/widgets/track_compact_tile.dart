@@ -14,12 +14,14 @@ class TrackCompactTile extends StatelessWidget {
     super.key,
     required this.track,
     required this.onTap,
+    this.onLongPress,
     this.isCurrent = false,
     this.isPlaying = false,
   });
 
   final Track track;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
   final bool isCurrent;
   final bool isPlaying;
 
@@ -30,6 +32,7 @@ class TrackCompactTile extends StatelessWidget {
         [track.artist, track.album].whereType<String>().join(' — ');
     return InkWell(
       onTap: onTap,
+      onLongPress: onLongPress,
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: Insets.gutter,

@@ -14,12 +14,14 @@ class TrackGridTile extends StatelessWidget {
     super.key,
     required this.track,
     required this.onTap,
+    this.onLongPress,
     this.isCurrent = false,
     this.isPlaying = false,
   });
 
   final Track track;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
   final bool isCurrent;
   final bool isPlaying;
 
@@ -28,6 +30,7 @@ class TrackGridTile extends StatelessWidget {
     final theme = Theme.of(context);
     return InkWell(
       onTap: onTap,
+      onLongPress: onLongPress,
       borderRadius: BorderRadius.circular(Radii.md),
       child: Padding(
         padding: const EdgeInsets.all(6),

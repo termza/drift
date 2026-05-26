@@ -174,6 +174,75 @@ class TrackSyncService extends ChangeNotifier {
     }
   }
 
+  /// Resolve the PocketBase file URL for a cloud-backed track. Returns null
+  /// when the track has no cloud record or the lookup fails. Callers can
+  /// hand the URL straight to `AudioSource.uri()` for HTTP streaming
+  /// instead of force-downloading the whole file before play.
+  Future<Uri?> streamUrl(Track track) async {
+    if (track.cloudRecordId == null) return null;
+    try {
+      final record =
+          await _pb.collection('tracks').getOne(track.cloudRecordId!);
+      final fileName = record.data['file'] as String?;
+      if (fileName == null || fileName.isEmpty) return null;
+      return _pb.files.getUrl(record, fileName);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Delete the cloud record for a track. Local file/row are not touched —
+  /// the caller decides whether to keep or also remove the local copy.
+  /// Returns true on success (or no-op when there's nothing to delete).
+  Future<bool> deleteRemote(Track track) async {
+    if (track.cloudRecordId == null) return true;
+    if (!_signedIn) return false;
+    try {
+      await _pb.collection('tracks').delete(track.cloudRecordId!);
+      await _db.db.update(
+        'tracks',
+        {
+          'cloud_record_id': null,
+          'cloud_state': TrackCloudState.localOnly.name,
+        },
+        where: 'id = ?',
+        whereArgs: [track.id],
+      );
+      notifyListeners();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Delete the locally cached file for a cloud-backed track. The row stays
+  /// in the library as cloud-only so the user can re-download later.
+  /// For tracks without a cloud copy, the row is deleted entirely.
+  Future<void> deleteLocalCopy(Track track) async {
+    if (track.filePath.isNotEmpty) {
+      try {
+        final f = File(track.filePath);
+        if (await f.exists()) await f.delete();
+      } catch (_) {}
+    }
+    if (track.cloudRecordId == null) {
+      // No cloud backup — drop the row entirely; otherwise tile would be
+      // orphaned with no playable source.
+      await _db.db.delete('tracks', where: 'id = ?', whereArgs: [track.id]);
+    } else {
+      await _db.db.update(
+        'tracks',
+        {
+          'file_path': '',
+          'cloud_state': TrackCloudState.cloudOnly.name,
+        },
+        where: 'id = ?',
+        whereArgs: [track.id],
+      );
+    }
+    notifyListeners();
+  }
+
   /// Download a cloud-only track's file to local storage. Returns the local
   /// path on success; throws on failure (so the caller can show an error).
   Future<String> downloadFile(Track track) async {

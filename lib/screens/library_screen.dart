@@ -140,6 +140,130 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     );
   }
 
+  Future<void> _showTrackActions(Track t) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.bg,
+      builder: (sheetCtx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                Insets.gutter,
+                Insets.md,
+                Insets.gutter,
+                4,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(t.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(sheetCtx).textTheme.titleMedium),
+                  if ((t.artist ?? '').isNotEmpty)
+                    Text('by ${t.artist}',
+                        style: Theme.of(sheetCtx).textTheme.bodySmall),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (t.isLocal && t.cloudRecordId != null)
+              _SheetAction(
+                icon: Icons.delete_outline_rounded,
+                label: 'Remove local copy',
+                subtitle: 'Frees disk space; re-download from cloud later',
+                onTap: () async {
+                  Navigator.of(sheetCtx).pop();
+                  await _confirmAndDelete(t, RemoveScope.localOnly);
+                },
+              ),
+            if (t.cloudRecordId != null)
+              _SheetAction(
+                icon: Icons.cloud_off_outlined,
+                label: 'Delete from cloud',
+                subtitle: t.isLocal
+                    ? 'Keeps the local file on this device'
+                    : 'No local copy — track will disappear from the library',
+                onTap: () async {
+                  Navigator.of(sheetCtx).pop();
+                  await _confirmAndDelete(t, RemoveScope.cloudOnly);
+                },
+              ),
+            _SheetAction(
+              icon: Icons.delete_forever_rounded,
+              label: 'Remove everywhere',
+              subtitle: 'Local copy + cloud catalog entry + bookmarks',
+              danger: true,
+              onTap: () async {
+                Navigator.of(sheetCtx).pop();
+                await _confirmAndDelete(t, RemoveScope.everywhere);
+              },
+            ),
+            const SizedBox(height: Insets.sm),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmAndDelete(Track t, RemoveScope scope) async {
+    final descriptor = switch (scope) {
+      RemoveScope.localOnly => 'the local copy of',
+      RemoveScope.cloudOnly => 'the cloud catalog entry for',
+      RemoveScope.everywhere => 'all traces of',
+    };
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Remove track'),
+        content: Text('Remove $descriptor "${t.title}"?\nThis can\'t be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dctx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.danger),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final sync = ref.read(trackSyncServiceProvider);
+    try {
+      switch (scope) {
+        case RemoveScope.localOnly:
+          await sync.deleteLocalCopy(t);
+        case RemoveScope.cloudOnly:
+          final ok = await sync.deleteRemote(t);
+          if (!ok && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Cloud delete failed — sign in to the sync server first.',
+                ),
+              ),
+            );
+          }
+        case RemoveScope.everywhere:
+          await sync.deleteRemote(t);
+          await sync.deleteLocalCopy(t);
+          await ref.read(libraryServiceProvider).remove(t.id);
+      }
+    } finally {
+      if (mounted) {
+        ref.invalidate(libraryProvider);
+        ref.invalidate(allProgressProvider);
+        ref.invalidate(cacheSizeProvider);
+      }
+    }
+  }
+
   Future<void> _play(Track t) async {
     // Cloud-only tracks need a download first. Show a blocking dialog so the
     // user knows what's happening — downloads can take a while for big M4Bs.
@@ -411,6 +535,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               isPlaying: isCurrent && (snap?.playing ?? false),
               progressFraction: fraction,
               onTap: () => _play(t),
+              onLongPress: () => _showTrackActions(t),
             );
           },
         );
@@ -466,6 +591,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               isCurrent: isCurrent,
               isPlaying: isCurrent && (snap?.playing ?? false),
               onTap: () => _play(t),
+              onLongPress: () => _showTrackActions(t),
             );
           },
         );
@@ -512,6 +638,65 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             .compareTo((b.artist ?? '').toLowerCase()));
     }
     return list;
+  }
+}
+
+enum RemoveScope { localOnly, cloudOnly, everywhere }
+
+class _SheetAction extends StatelessWidget {
+  const _SheetAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.subtitle,
+    this.danger = false,
+  });
+  final IconData icon;
+  final String label;
+  final String? subtitle;
+  final VoidCallback onTap;
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = danger ? AppColors.danger : AppColors.textPrimary;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: Insets.gutter,
+          vertical: 12,
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 22, color: color),
+            const SizedBox(width: Insets.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: color,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle!,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
