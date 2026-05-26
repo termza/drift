@@ -173,8 +173,17 @@ final cacheSizeProvider = FutureProvider<int>((ref) async {
   return ref.watch(trackSyncServiceProvider).cacheSizeBytes();
 });
 
-/// Which top-level destination is selected in the sidebar.
-enum AppSection { library, favorites }
+/// Top-level navigation destinations. Mobile bottom-nav surfaces library /
+/// playing / cloudStatus / settings; the desktop sidebar adds favorites and
+/// playlists.
+enum AppSection {
+  library,
+  favorites,
+  playlists,
+  playing,
+  cloudStatus,
+  settings,
+}
 
 final currentSectionProvider =
     StateProvider<AppSection>((ref) => AppSection.library);

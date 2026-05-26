@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../theme/app_colors.dart';
-import '../theme/app_spacing.dart';
 
 /// Custom title bar for desktop. Native chrome is hidden via window_manager
 /// init in main(); this widget paints our own — brand wordmark on the left,
@@ -127,15 +126,38 @@ class _BrandWord extends StatelessWidget {
           decoration: BoxDecoration(
             color: AppColors.accent,
             shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.accent.withValues(alpha: 0.5),
+                blurRadius: 6,
+                spreadRadius: 0,
+              ),
+            ],
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 10),
         Text(
           'DRIFT',
           style: theme.textTheme.labelSmall?.copyWith(
             color: AppColors.textPrimary,
             fontWeight: FontWeight.w700,
             letterSpacing: 2.4,
+            fontSize: 11,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          width: 1,
+          height: 11,
+          color: AppColors.textTertiary.withValues(alpha: 0.4),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          'Your Cloud Library',
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: AppColors.textSecondary,
+            fontWeight: FontWeight.w500,
+            letterSpacing: 0.3,
             fontSize: 11,
           ),
         ),

@@ -13,7 +13,12 @@ import 'sign_in_screen.dart';
 /// iOS-style grouped settings list. White cards on the neutral background,
 /// rows with leading icon · title/subtitle · trailing element.
 class SettingsScreen extends ConsumerWidget {
-  const SettingsScreen({super.key});
+  const SettingsScreen({super.key, this.embedded = false});
+
+  /// When true, the screen is rendered as a top-level section (mobile bottom
+  /// nav, desktop sidebar) and the back chevron is hidden. When false it's
+  /// pushed as a route and shows the chevron.
+  final bool embedded;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -40,19 +45,21 @@ class SettingsScreen extends ConsumerWidget {
                 ),
                 child: Row(
                   children: [
-                    InkResponse(
-                      radius: 22,
-                      onTap: () => Navigator.of(context).maybePop(),
-                      child: Padding(
-                        padding: const EdgeInsets.all(Insets.xs),
-                        child: Icon(
-                          Icons.chevron_left_rounded,
-                          size: 26,
-                          color: AppColors.accent,
+                    if (!embedded) ...[
+                      InkResponse(
+                        radius: 22,
+                        onTap: () => Navigator.of(context).maybePop(),
+                        child: Padding(
+                          padding: const EdgeInsets.all(Insets.xs),
+                          child: Icon(
+                            Icons.chevron_left_rounded,
+                            size: 26,
+                            color: AppColors.accent,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 4),
+                      const SizedBox(width: 4),
+                    ],
                     Text('Settings', style: theme.textTheme.displayLarge),
                   ],
                 ),

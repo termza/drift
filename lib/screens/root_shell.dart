@@ -4,10 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../state/providers.dart';
+import '../theme/app_colors.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/sidebar.dart';
+import 'cloud_status_screen.dart';
 import 'favorites_screen.dart';
 import 'library_screen.dart';
+import 'player_screen.dart';
+import 'playlists_screen.dart';
+import 'settings_screen.dart';
 
 /// App root: persistent sidebar (Spotify-style) + main content + mini player.
 /// Sidebar is icon-only below a threshold and full-width above it.
@@ -94,50 +99,119 @@ class _SectionBody extends StatelessWidget {
         child: child,
       ),
       child: switch (section) {
-        AppSection.library => const LibraryScreen(
-            key: ValueKey('library'),
-          ),
-        AppSection.favorites => const FavoritesScreen(
-            key: ValueKey('favorites'),
-          ),
+        AppSection.library =>
+          const LibraryScreen(key: ValueKey('library')),
+        AppSection.favorites =>
+          const FavoritesScreen(key: ValueKey('favorites')),
+        AppSection.playlists =>
+          const PlaylistsScreen(key: ValueKey('playlists')),
+        AppSection.playing =>
+          const PlayerScreen(key: ValueKey('playing')),
+        AppSection.cloudStatus =>
+          const CloudStatusScreen(key: ValueKey('cloud')),
+        AppSection.settings =>
+          const SettingsScreen(key: ValueKey('settings'), embedded: true),
       },
     );
   }
 }
 
+/// Mobile bottom nav — 4 tabs matching the phone mockup:
+/// Library · Playing · Cloud Status · Settings. Favorites + Playlists live
+/// behind in-screen affordances on mobile (or via the side drawer if we add
+/// one later).
 class _MobileNavBar extends ConsumerWidget {
   const _MobileNavBar({required this.section});
   final AppSection section;
 
+  static const _tabs = <AppSection>[
+    AppSection.library,
+    AppSection.playing,
+    AppSection.cloudStatus,
+    AppSection.settings,
+  ];
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final idx = _tabs.indexOf(section).clamp(0, _tabs.length - 1);
     return NavigationBarTheme(
-      data: const NavigationBarThemeData(
-        backgroundColor: Color(0xFF1C1C1E),
-        indicatorColor: Color(0x22E5A06B),
+      data: NavigationBarThemeData(
+        backgroundColor: AppColors.bg,
+        indicatorColor: AppColors.accent.withValues(alpha: 0.18),
         elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        labelTextStyle: WidgetStatePropertyAll(
+          TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ),
-      child: NavigationBar(
-        selectedIndex: section == AppSection.library ? 0 : 1,
-        onDestinationSelected: (i) {
-          ref.read(currentSectionProvider.notifier).state =
-              i == 0 ? AppSection.library : AppSection.favorites;
-        },
-        height: 60,
-        labelBehavior:
-            NavigationDestinationLabelBehavior.onlyShowSelected,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.library_music_outlined),
-            selectedIcon: Icon(Icons.library_music_rounded),
-            label: 'Library',
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(
+              color: Colors.white.withValues(alpha: 0.06),
+              width: 0.5,
+            ),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.favorite_outline_rounded),
-            selectedIcon: Icon(Icons.favorite_rounded),
-            label: 'Favorites',
-          ),
-        ],
+        ),
+        child: NavigationBar(
+          selectedIndex: idx,
+          onDestinationSelected: (i) {
+            ref.read(currentSectionProvider.notifier).state = _tabs[i];
+          },
+          height: 62,
+          labelBehavior:
+              NavigationDestinationLabelBehavior.alwaysShow,
+          destinations: [
+            NavigationDestination(
+              icon: Icon(
+                Icons.library_music_outlined,
+                color: AppColors.textSecondary,
+              ),
+              selectedIcon: Icon(
+                Icons.library_music_rounded,
+                color: AppColors.accent,
+              ),
+              label: 'Library',
+            ),
+            NavigationDestination(
+              icon: Icon(
+                Icons.graphic_eq_rounded,
+                color: AppColors.textSecondary,
+              ),
+              selectedIcon: Icon(
+                Icons.graphic_eq_rounded,
+                color: AppColors.accent,
+              ),
+              label: 'Playing',
+            ),
+            NavigationDestination(
+              icon: Icon(
+                Icons.cloud_outlined,
+                color: AppColors.textSecondary,
+              ),
+              selectedIcon: Icon(
+                Icons.cloud_rounded,
+                color: AppColors.accent,
+              ),
+              label: 'Cloud Status',
+            ),
+            NavigationDestination(
+              icon: Icon(
+                Icons.settings_outlined,
+                color: AppColors.textSecondary,
+              ),
+              selectedIcon: Icon(
+                Icons.settings_rounded,
+                color: AppColors.accent,
+              ),
+              label: 'Settings',
+            ),
+          ],
+        ),
       ),
     );
   }
