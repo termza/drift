@@ -160,6 +160,19 @@ enum LibrarySort { recentlyAdded, title, artist }
 final librarySortProvider =
     StateProvider<LibrarySort>((ref) => LibrarySort.recentlyAdded);
 
+/// What's currently shown in the library list — segmented control state.
+enum LibraryFilter { all, audiobooks, music, downloaded }
+
+final libraryFilterProvider =
+    StateProvider<LibraryFilter>((ref) => LibraryFilter.all);
+
+/// Total bytes held in the synced-tracks cache. Re-fetched each time the
+/// library mounts; the value is also nudged when downloads complete via
+/// ref.invalidate.
+final cacheSizeProvider = FutureProvider<int>((ref) async {
+  return ref.watch(trackSyncServiceProvider).cacheSizeBytes();
+});
+
 /// Which top-level destination is selected in the sidebar.
 enum AppSection { library, favorites }
 

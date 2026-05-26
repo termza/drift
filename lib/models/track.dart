@@ -61,6 +61,11 @@ class Track {
 
   bool get fileExists => filePath.isNotEmpty && File(filePath).existsSync();
 
+  /// Best-effort audiobook detection from the file extension. M4B is the
+  /// standard audiobook container. Other long-form formats fall through to
+  /// "music" — this is a display heuristic, not a guarantee.
+  bool get isAudiobook => filePath.toLowerCase().endsWith('.m4b');
+
   Track copyWith({
     String? filePath,
     String? title,

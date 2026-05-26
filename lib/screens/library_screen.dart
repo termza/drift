@@ -8,8 +8,11 @@ import '../services/import_result.dart';
 import '../state/providers.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
+import '../widgets/cache_size_indicator.dart';
+import '../widgets/connection_bar.dart';
 import '../widgets/continue_card.dart';
 import '../widgets/empty_library.dart';
+import '../widgets/library_filter_chips.dart';
 import '../widgets/track_compact_tile.dart';
 import '../widgets/track_grid_tile.dart';
 import '../widgets/track_tile.dart';
@@ -189,6 +192,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           orElse: () => null,
         );
     final sort = ref.watch(librarySortProvider);
+    final filter = ref.watch(libraryFilterProvider);
     final appearanceService = ref.watch(appearancePrefsServiceProvider);
     final viewMode = appearanceService.current.libraryViewMode;
 
@@ -206,7 +210,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
             final progressMap =
                 progressAsync.maybeWhen(data: (m) => m, orElse: () => null);
-            final filtered = _filterAndSort(tracks, sort);
+            final filtered = _filterAndSort(tracks, sort, filter);
             final showContinue = continueAsync.maybeWhen(
               data: (v) => v != null && _query.isEmpty,
               orElse: () => false,
@@ -214,6 +218,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
             return CustomScrollView(
               slivers: [
+                const SliverToBoxAdapter(child: ConnectionBar()),
                 SliverToBoxAdapter(
                   child: _Header(
                     onImport: _import,
@@ -232,45 +237,32 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                         Insets.gutter,
                         0,
                       ),
-                      child: ContinueCard(
+                      child: _ContinueWithChapters(
                         track: continueAsync.value!.track,
                         progress: continueAsync.value!.progress,
                         onResume: () => _play(continueAsync.value!.track),
                       ),
                     ),
                   ),
+                const SliverToBoxAdapter(
+                  child: SizedBox(height: Insets.lg),
+                ),
+                const SliverToBoxAdapter(child: LibraryFilterChips()),
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(
                       Insets.gutter,
-                      Insets.xl,
+                      Insets.md,
                       Insets.gutter,
                       Insets.sm,
                     ),
                     child: Row(
                       children: [
                         Text(
-                          _query.isNotEmpty
-                              ? 'Results'
-                              : 'All tracks',
-                          style: theme.textTheme.headlineLarge,
-                        ),
-                        const SizedBox(width: Insets.sm),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.fillTertiary,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            '${filtered.length}',
-                            style: theme.textTheme.labelMedium?.copyWith(
-                              color: AppColors.textSecondary,
-                              fontWeight: FontWeight.w600,
-                            ),
+                          '${filtered.length} ${filtered.length == 1 ? 'track' : 'tracks'}',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: AppColors.textSecondary,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                         const Spacer(),
@@ -311,7 +303,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                     snap: snap,
                     progressMap: progressMap,
                   ),
-                const SliverToBoxAdapter(child: SizedBox(height: 140)),
+                const SliverToBoxAdapter(child: CacheSizeIndicator()),
+                const SliverToBoxAdapter(child: SizedBox(height: 100)),
               ],
             );
           },
@@ -413,8 +406,26 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     }
   }
 
-  List<Track> _filterAndSort(List<Track> tracks, LibrarySort sort) {
+  List<Track> _filterAndSort(
+    List<Track> tracks,
+    LibrarySort sort,
+    LibraryFilter filter,
+  ) {
     Iterable<Track> it = tracks;
+
+    // Filter chip: All / Audiobooks / Music / Downloaded.
+    switch (filter) {
+      case LibraryFilter.all:
+        break;
+      case LibraryFilter.audiobooks:
+        it = it.where((t) => t.isAudiobook);
+      case LibraryFilter.music:
+        it = it.where((t) => !t.isAudiobook);
+      case LibraryFilter.downloaded:
+        // "Downloaded" = has a local file. Excludes cloud-only catalog entries.
+        it = it.where((t) => t.isLocal);
+    }
+
     if (_query.isNotEmpty) {
       final q = _query.toLowerCase();
       it = it.where((t) =>
@@ -435,6 +446,47 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             .compareTo((b.artist ?? '').toLowerCase()));
     }
     return list;
+  }
+}
+
+/// Continue card wrapper that pulls chapter metadata for the resuming track
+/// so the card can show "Ch. N / N". Inline helper keeps the build method
+/// readable.
+class _ContinueWithChapters extends ConsumerWidget {
+  const _ContinueWithChapters({
+    required this.track,
+    required this.progress,
+    required this.onResume,
+  });
+  final Track track;
+  final dynamic progress;
+  final VoidCallback onResume;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final chaptersAsync = ref.watch(chaptersForTrackProvider(track.id));
+    final chapters = chaptersAsync.maybeWhen(
+      data: (c) => c,
+      orElse: () => null,
+    );
+    int? current;
+    if (chapters != null && chapters.isNotEmpty && progress != null) {
+      final pos = progress.position as Duration;
+      for (var i = 0; i < chapters.length; i++) {
+        if (chapters[i].contains(pos)) {
+          current = i + 1;
+          break;
+        }
+      }
+      current ??= chapters.length;
+    }
+    return ContinueCard(
+      track: track,
+      progress: progress,
+      onResume: onResume,
+      currentChapter: current,
+      totalChapters: chapters?.isNotEmpty == true ? chapters!.length : null,
+    );
   }
 }
 

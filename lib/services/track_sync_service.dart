@@ -253,4 +253,22 @@ class TrackSyncService extends ChangeNotifier {
     if (!await synced.exists()) await synced.create(recursive: true);
     return p.join(synced.path, '$trackId$ext');
   }
+
+  /// Total bytes currently held in the synced-tracks cache directory. Cheap
+  /// non-recursive scan — synced files are flat under one directory.
+  Future<int> cacheSizeBytes() async {
+    try {
+      final dir = await getApplicationSupportDirectory();
+      final synced = Directory(p.join(dir.path, 'synced_tracks'));
+      if (!await synced.exists()) return 0;
+      var total = 0;
+      await for (final entity
+          in synced.list(recursive: false, followLinks: false)) {
+        if (entity is File) total += await entity.length();
+      }
+      return total;
+    } catch (_) {
+      return 0;
+    }
+  }
 }
