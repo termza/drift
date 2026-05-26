@@ -17,7 +17,10 @@ class ServerPrefs {
   const ServerPrefs({
     this.enabled = false,
     this.port = 8090,
-    this.syncEmail = 'drift@local',
+    // PocketBase 0.38+ enforces RFC-style emails (TLD required), so a bare
+    // "drift@local" is rejected. ".local" makes it valid but still routes
+    // nowhere — perfect for a synthetic sync account.
+    this.syncEmail = 'drift@drift.local',
     this.syncPassword = '',
     this.adminEmail = '',
     this.adminPassword = '',
@@ -54,10 +57,18 @@ class ServerPrefs {
         'adminPassword': adminPassword,
       };
 
+  /// Old installs stored "drift@local" which PocketBase 0.38+ rejects.
+  /// Coerce it on read so existing users transparently upgrade.
+  static String _migrateSyncEmail(String? saved) {
+    if (saved == null || saved.isEmpty) return 'drift@drift.local';
+    if (saved == 'drift@local') return 'drift@drift.local';
+    return saved;
+  }
+
   factory ServerPrefs.fromJson(Map<String, dynamic> j) => ServerPrefs(
         enabled: (j['enabled'] as bool?) ?? false,
         port: (j['port'] as num?)?.toInt() ?? 8090,
-        syncEmail: (j['syncEmail'] as String?) ?? 'drift@local',
+        syncEmail: _migrateSyncEmail(j['syncEmail'] as String?),
         syncPassword: (j['syncPassword'] as String?) ?? '',
         adminEmail: (j['adminEmail'] as String?) ?? '',
         adminPassword: (j['adminPassword'] as String?) ?? '',
