@@ -7,6 +7,7 @@ import '../state/providers.dart';
 import '../theme/accent_palette.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
+import '../widgets/glass_panel.dart';
 import 'sign_in_screen.dart';
 
 /// iOS-style grouped settings list. White cards on the neutral background,
@@ -561,12 +562,8 @@ class _Group extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: Insets.gutter),
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(Radii.md),
-        ),
-        clipBehavior: Clip.antiAlias,
+      child: GlassPanel(
+        borderRadius: BorderRadius.circular(Radii.md),
         child: Column(
           children: [
             for (var i = 0; i < children.length; i++) ...[
@@ -576,7 +573,7 @@ class _Group extends StatelessWidget {
                   padding: const EdgeInsets.only(left: 52),
                   child: Divider(
                     height: 0.5,
-                    color: AppColors.borderSubtle,
+                    color: Colors.white.withValues(alpha: 0.04),
                   ),
                 ),
             ],

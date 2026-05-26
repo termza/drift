@@ -11,7 +11,9 @@ class AppearancePrefs {
 
   const AppearancePrefs({
     this.themeMode = ThemeMode.dark,
-    this.accentKey = 'copper',
+    // Kinetic Amber — Drift's signature look. Existing installs keep
+    // whatever they had stored.
+    this.accentKey = 'kinetic',
     this.libraryViewMode = LibraryViewMode.list,
   });
 
@@ -37,7 +39,7 @@ class AppearancePrefs {
           (m) => m.name == j['themeMode'],
           orElse: () => ThemeMode.dark,
         ),
-        accentKey: j['accentKey'] as String? ?? 'copper',
+        accentKey: j['accentKey'] as String? ?? 'kinetic',
         libraryViewMode: LibraryViewMode.values.firstWhere(
           (m) => m.name == j['libraryViewMode'],
           orElse: () => LibraryViewMode.list,

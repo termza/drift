@@ -362,9 +362,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           ),
           sliver: SliverLayoutBuilder(
             builder: (context, constraints) {
-              // Aim for ~160px tiles, snapping to whole columns.
+              // Aim for ~170px tiles, snapping to whole columns. Allow up to
+              // 10 cols so widescreen Windows / external monitors fill nicely.
               final cols =
-                  (constraints.crossAxisExtent / 170).floor().clamp(2, 8);
+                  (constraints.crossAxisExtent / 175).floor().clamp(2, 10);
               return SliverGrid(
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: cols,

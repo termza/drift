@@ -5,8 +5,10 @@ import '../models/track.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import 'artwork.dart';
+import 'glass_panel.dart';
 
-/// Apple-Music-style "Recently Played" hero card. White card, subtle shadow.
+/// Frosted-glass "Continue listening" hero. Single static panel — backdrop
+/// blur is cheap because the card doesn't move during scroll.
 class ContinueCard extends StatelessWidget {
   const ContinueCard({
     super.key,
@@ -27,24 +29,13 @@ class ContinueCard extends StatelessWidget {
         dur == 0 ? 0.0 : progress.position.inMilliseconds / dur;
     final remaining = (track.duration ?? Duration.zero) - progress.position;
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onResume,
-        borderRadius: BorderRadius.circular(Radii.lg),
-        child: Ink(
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(Radii.lg),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.06),
-                blurRadius: 24,
-                spreadRadius: -6,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
+    return GlassPanel(
+      borderRadius: BorderRadius.circular(Radii.lg),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onResume,
+          borderRadius: BorderRadius.circular(Radii.lg),
           child: Padding(
             padding: const EdgeInsets.all(Insets.md),
             child: Row(
@@ -108,6 +99,13 @@ class ContinueCard extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: AppColors.accent,
                     shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.accent.withValues(alpha: 0.35),
+                        blurRadius: 18,
+                        spreadRadius: -2,
+                      ),
+                    ],
                   ),
                   child: Icon(
                     Icons.play_arrow_rounded,

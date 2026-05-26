@@ -79,7 +79,8 @@ final bookmarksForTrackProvider =
   return ref.watch(bookmarkServiceProvider).listForTrack(trackId);
 });
 
-final trackSyncServiceProvider = Provider<TrackSyncService>((ref) {
+final trackSyncServiceProvider =
+    ChangeNotifierProvider<TrackSyncService>((ref) {
   return TrackSyncService(
     ref.watch(databaseProvider),
     ref.watch(authRepositoryProvider),

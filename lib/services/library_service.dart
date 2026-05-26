@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../models/track.dart';
+import '../utils/filename_cleaner.dart';
 import 'chapter_service.dart';
 import 'database.dart';
 import 'import_result.dart';
@@ -130,16 +131,21 @@ class LibraryService {
   }
 
   Future<Track> _importNew(File file, String id) async {
-    String title = p.basenameWithoutExtension(file.path);
+    final baseName = p.basenameWithoutExtension(file.path);
+    String title = baseName;
     String? artist;
     String? album;
     Duration? duration;
     String? artworkPath;
+    var titleFromMetadata = false;
 
     try {
       final meta = readMetadata(file, getImage: true);
       final t = (meta.title ?? '').trim();
-      if (t.isNotEmpty) title = t;
+      if (t.isNotEmpty) {
+        title = t;
+        titleFromMetadata = true;
+      }
       final ar = (meta.artist ?? '').trim();
       if (ar.isNotEmpty) artist = ar;
       final al = (meta.album ?? '').trim();
@@ -150,6 +156,16 @@ class LibraryService {
       }
     } catch (_) {
       // Metadata read failures are non-fatal — we still index the file.
+    }
+
+    // Filename-cleanup fallback: when metadata is missing, derive title /
+    // artist / album from common naming patterns rather than dumping a raw
+    // basename in the UI.
+    if (!titleFromMetadata || artist == null || album == null) {
+      final cleaned = cleanFilename(baseName);
+      if (!titleFromMetadata) title = cleaned.title;
+      artist ??= cleaned.artist;
+      album ??= cleaned.album;
     }
 
     final track = Track(

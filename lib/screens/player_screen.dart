@@ -44,16 +44,25 @@ class PlayerScreen extends ConsumerWidget {
               builder: (context, c) {
             // Reserve space for everything below the artwork before sizing it.
             const reservedBelow = 340.0;
+            // Cap content width on widescreen — the player composition reads
+            // best at ~520px wide; beyond that the gradient does the work
+            // and the controls cluster centers.
+            const maxContent = 540.0;
+            final contentWidth =
+                c.maxWidth > maxContent ? maxContent : c.maxWidth;
             final byWidth =
-                (c.maxWidth - Insets.gutter * 2).clamp(180.0, 380.0);
+                (contentWidth - Insets.gutter * 2).clamp(180.0, 380.0);
             final byHeight = (c.maxHeight - reservedBelow)
                 .clamp(180.0, 380.0);
             final artSize = byWidth < byHeight ? byWidth : byHeight;
 
-            return Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: Insets.gutter,
-              ),
+            return Center(
+              child: SizedBox(
+                width: contentWidth,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: Insets.gutter,
+                  ),
               child: Column(
                 children: [
                   const SizedBox(height: 4),
@@ -91,6 +100,8 @@ class PlayerScreen extends ConsumerWidget {
                   const _Footer(),
                   const SizedBox(height: Insets.sm),
                 ],
+              ),
+                ),
               ),
             );
           },

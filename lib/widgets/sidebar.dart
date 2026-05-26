@@ -6,6 +6,7 @@ import '../state/providers.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import 'artwork.dart';
+import 'glass_panel.dart';
 
 /// Left-rail navigation in the Spotify style. Brand + primary destinations.
 /// Compact (icon-only) variant available for narrow desktop widths.
@@ -25,17 +26,23 @@ class Sidebar extends ConsumerWidget {
           orElse: () => 0,
         );
 
+    // Hairline right separator on the outer box, glass panel inside fills
+    // the sidebar surface with the new tinted look.
     return Container(
       width: compact ? 76 : 232,
       decoration: BoxDecoration(
-        color: AppColors.surface,
         border: Border(
-          right: BorderSide(color: AppColors.borderSubtle, width: 0.5),
+          right: BorderSide(
+            color: Colors.white.withValues(alpha: 0.06),
+            width: 0.5,
+          ),
         ),
       ),
-      child: SafeArea(
-        right: false,
-        child: Column(
+      child: GlassPanel(
+        borderRadius: BorderRadius.zero,
+        child: SafeArea(
+          right: false,
+          child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
@@ -74,6 +81,7 @@ class Sidebar extends ConsumerWidget {
             _SettingsItem(compact: compact),
             const SizedBox(height: Insets.sm),
           ],
+        ),
         ),
       ),
     );

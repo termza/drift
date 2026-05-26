@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -19,11 +20,16 @@ import 'database.dart';
 /// - Uploads are sequential and fire-and-forget from import.
 /// - Downloads are blocking (caller waits and shows UI).
 /// - No retry queue, no partial-resume, no artwork sync yet.
-class TrackSyncService {
+class TrackSyncService extends ChangeNotifier {
   TrackSyncService(this._db, this._auth);
 
   final AppDatabase _db;
   final AuthRepository _auth;
+
+  /// Per-track progress (0.0–1.0) while an upload or download is in flight.
+  /// Read by the per-tile sync bar; entries are cleared on completion.
+  final Map<String, double> _progressByTrack = {};
+  double? progressFor(String trackId) => _progressByTrack[trackId];
 
   PocketBase get _pb => _auth.pb;
   bool get _signedIn => _auth.isSignedIn;
@@ -224,6 +230,20 @@ class TrackSyncService {
       where: 'id = ?',
       whereArgs: [trackId],
     );
+    if (state != TrackCloudState.uploading &&
+        state != TrackCloudState.downloading) {
+      _progressByTrack.remove(trackId);
+    }
+    notifyListeners();
+  }
+
+  /// Public so callers that *do* know byte-level progress (future
+  /// streamed-multipart upload, chunked download) can drive the per-tile bar.
+  /// The sync bar shows an indeterminate sweep when no value has been set.
+  // ignore: use_setters_to_change_properties
+  void setProgress(String trackId, double fraction) {
+    _progressByTrack[trackId] = fraction.clamp(0.0, 1.0);
+    notifyListeners();
   }
 
   Future<String> _localPathFor(String trackId, String pbFileName) async {

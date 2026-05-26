@@ -59,6 +59,9 @@ class AccentPreset {
 }
 
 const kAccentPresets = <AccentPreset>[
+  // Kinetic Amber — Drift's signature highlight. First in the list so it's the
+  // default for fresh installs, and the most prominent in the picker.
+  AccentPreset(key: 'kinetic', name: 'Kinetic Amber', color: Color(0xFFFF7A00)),
   AccentPreset(key: 'copper', name: 'Copper', color: Color(0xFFE5A06B)),
   AccentPreset(key: 'amber', name: 'Amber', color: Color(0xFFFFB454)),
   AccentPreset(key: 'coral', name: 'Coral', color: Color(0xFFFF7D61)),
