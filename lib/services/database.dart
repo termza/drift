@@ -25,7 +25,7 @@ class AppDatabase {
     final db = await databaseFactory.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 3,
+        version: 4,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       ),
@@ -43,7 +43,9 @@ class AppDatabase {
         album TEXT,
         duration_ms INTEGER,
         artwork_path TEXT,
-        added_at INTEGER NOT NULL
+        added_at INTEGER NOT NULL,
+        cloud_record_id TEXT,
+        cloud_state TEXT
       )
     ''');
 
@@ -77,6 +79,10 @@ class AppDatabase {
       await _createBookmarks(db);
       await db.execute('ALTER TABLE progress ADD COLUMN current_chapter INTEGER');
       await db.execute('ALTER TABLE progress ADD COLUMN last_paused_at INTEGER');
+    }
+    if (from < 4) {
+      await db.execute('ALTER TABLE tracks ADD COLUMN cloud_record_id TEXT');
+      await db.execute('ALTER TABLE tracks ADD COLUMN cloud_state TEXT');
     }
   }
 

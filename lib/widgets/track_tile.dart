@@ -77,6 +77,24 @@ class TrackTile extends ConsumerWidget {
                           size: 12,
                         ),
                       ],
+                      if (track.isCloudOnly || track.isDownloading) ...[
+                        const SizedBox(width: 6),
+                        Icon(
+                          track.isDownloading
+                              ? Icons.downloading_rounded
+                              : Icons.cloud_outlined,
+                          size: 14,
+                          color: AppColors.textTertiary,
+                        ),
+                      ],
+                      if (track.isUploading) ...[
+                        const SizedBox(width: 6),
+                        Icon(
+                          Icons.cloud_upload_outlined,
+                          size: 14,
+                          color: AppColors.textTertiary,
+                        ),
+                      ],
                     ],
                   ),
                   if (subtitle.isNotEmpty) ...[

@@ -24,6 +24,23 @@ class LibraryScreen extends ConsumerStatefulWidget {
 class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   String _query = '';
   bool _searchOpen = false;
+  bool _pulled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Pull cloud catalog once per screen mount, after first frame so we
+    // don't block paint. Silent failure — library still loads from local DB.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (_pulled || !mounted) return;
+      _pulled = true;
+      final auth = ref.read(authRepositoryProvider);
+      if (!auth.isSignedIn) return;
+      await ref.read(trackSyncServiceProvider).pullCatalog();
+      if (!mounted) return;
+      ref.invalidate(libraryProvider);
+    });
+  }
 
   Future<void> _import() async {
     final result = await ref.read(libraryServiceProvider).pickAndImport();
@@ -115,11 +132,39 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   }
 
   Future<void> _play(Track t) async {
+    // Cloud-only tracks need a download first. Show a blocking dialog so the
+    // user knows what's happening — downloads can take a while for big M4Bs.
+    final needsDownload = !t.isLocal;
+    if (needsDownload && mounted) {
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          content: Row(
+            children: [
+              const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2.5),
+              ),
+              const SizedBox(width: Insets.md),
+              Expanded(
+                child: Text(
+                  'Downloading "${t.title}"…',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     try {
       await ref.read(audioPlayerProvider).load(t);
       ref.read(currentTrackProvider.notifier).state = t;
+      if (needsDownload) ref.invalidate(libraryProvider);
     } catch (e, st) {
-      // Surface playback failures instead of swallowing them silently.
       debugPrint('Failed to load track ${t.id}: $e\n$st');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -127,6 +172,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           content: Text('Could not play "${t.title}": $e'),
         ),
       );
+    } finally {
+      if (needsDownload && mounted) Navigator.of(context, rootNavigator: true).pop();
     }
   }
 

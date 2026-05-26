@@ -1,0 +1,236 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:pocketbase/pocketbase.dart';
+import 'package:sqflite/sqflite.dart';
+
+import '../models/track.dart';
+import 'auth_repository.dart';
+import 'database.dart';
+
+/// Pushes locally-imported tracks up to PocketBase and pulls the user's
+/// cloud catalog down. Files larger than the PB instance's `maxBodySize`
+/// will fail to upload — the caller surfaces that as a generic sync error.
+///
+/// This is a minimum-viable implementation:
+/// - Uploads are sequential and fire-and-forget from import.
+/// - Downloads are blocking (caller waits and shows UI).
+/// - No retry queue, no partial-resume, no artwork sync yet.
+class TrackSyncService {
+  TrackSyncService(this._db, this._auth);
+
+  final AppDatabase _db;
+  final AuthRepository _auth;
+
+  PocketBase get _pb => _auth.pb;
+  bool get _signedIn => _auth.isSignedIn;
+  String? get _userId => _auth.userId;
+
+  /// Pull the user's track catalog from PocketBase and merge into the local
+  /// `tracks` table. Cloud-only entries are inserted with empty `file_path`
+  /// and `cloud_state = cloudOnly`; existing local rows that match by
+  /// `track_id` just get their `cloud_record_id` filled in.
+  ///
+  /// Best-effort: swallows network errors so the library still loads.
+  Future<void> pullCatalog() async {
+    final uid = _userId;
+    if (uid == null) return;
+
+    try {
+      final records = await _pb.collection('tracks').getFullList(
+            filter: 'user = "$uid"',
+            batch: 200,
+          );
+
+      for (final r in records) {
+        final trackId = r.data['track_id'] as String?;
+        if (trackId == null) continue;
+
+        final existingRows = await _db.db.query(
+          'tracks',
+          where: 'id = ?',
+          whereArgs: [trackId],
+          limit: 1,
+        );
+
+        if (existingRows.isNotEmpty) {
+          // Local copy already exists — just remember the cloud id and bump
+          // state to 'uploaded' if it was previously local-only.
+          final existing = Track.fromRow(existingRows.first);
+          if (existing.cloudRecordId == r.id &&
+              existing.cloudState == TrackCloudState.uploaded) {
+            continue;
+          }
+          await _db.db.update(
+            'tracks',
+            {
+              'cloud_record_id': r.id,
+              'cloud_state': existing.isLocal
+                  ? TrackCloudState.uploaded.name
+                  : TrackCloudState.cloudOnly.name,
+            },
+            where: 'id = ?',
+            whereArgs: [trackId],
+          );
+        } else {
+          // New catalog entry — insert as cloud-only.
+          final durationMs = (r.data['duration_ms'] as num?)?.toInt();
+          final addedAt = DateTime.now().millisecondsSinceEpoch;
+          await _db.db.insert(
+            'tracks',
+            {
+              'id': trackId,
+              'file_path': '',
+              'title': (r.data['title'] as String?) ?? trackId,
+              'artist': r.data['artist'] as String?,
+              'album': r.data['album'] as String?,
+              'duration_ms': durationMs,
+              'artwork_path': null,
+              'added_at': addedAt,
+              'cloud_record_id': r.id,
+              'cloud_state': TrackCloudState.cloudOnly.name,
+            },
+            conflictAlgorithm: ConflictAlgorithm.ignore,
+          );
+        }
+      }
+    } catch (_) {
+      // Best-effort. Catalog pulls happen in the background; UI is unaffected.
+    }
+  }
+
+  /// Upload a freshly-imported local track to PocketBase. Sets cloud_state
+  /// to [TrackCloudState.uploading] for the duration, then [uploaded] on
+  /// success or [failed] on error.
+  ///
+  /// Skips silently when not signed in or when the track is already uploaded.
+  Future<void> uploadIfLocal(Track track) async {
+    if (!_signedIn) return;
+    if (!track.isLocal) return;
+    if (track.cloudState == TrackCloudState.uploaded ||
+        track.cloudState == TrackCloudState.uploading) {
+      return;
+    }
+    final uid = _userId;
+    if (uid == null) return;
+
+    final file = File(track.filePath);
+    if (!await file.exists()) return;
+
+    await _setState(track.id, TrackCloudState.uploading);
+
+    try {
+      final ext = p.extension(track.filePath).replaceFirst('.', '');
+      final fileSize = await file.length();
+
+      final files = <http.MultipartFile>[
+        await http.MultipartFile.fromPath('file', track.filePath),
+      ];
+      if (track.artworkPath != null &&
+          File(track.artworkPath!).existsSync()) {
+        files.add(
+          await http.MultipartFile.fromPath('artwork', track.artworkPath!),
+        );
+      }
+
+      final body = <String, dynamic>{
+        'user': uid,
+        'track_id': track.id,
+        'title': track.title,
+        if (track.artist != null) 'artist': track.artist,
+        if (track.album != null) 'album': track.album,
+        if (track.duration != null)
+          'duration_ms': track.duration!.inMilliseconds,
+        'file_size': fileSize,
+        'file_ext': ext,
+        'client_updated_at': DateTime.now().toUtc().toIso8601String(),
+      };
+
+      final created = await _pb.collection('tracks').create(
+            body: body,
+            files: files,
+          );
+
+      await _db.db.update(
+        'tracks',
+        {
+          'cloud_record_id': created.id,
+          'cloud_state': TrackCloudState.uploaded.name,
+        },
+        where: 'id = ?',
+        whereArgs: [track.id],
+      );
+    } catch (_) {
+      await _setState(track.id, TrackCloudState.failed);
+    }
+  }
+
+  /// Download a cloud-only track's file to local storage. Returns the local
+  /// path on success; throws on failure (so the caller can show an error).
+  Future<String> downloadFile(Track track) async {
+    if (track.cloudRecordId == null) {
+      throw StateError('Track ${track.id} has no cloud record');
+    }
+    await _setState(track.id, TrackCloudState.downloading);
+
+    try {
+      final record = await _pb
+          .collection('tracks')
+          .getOne(track.cloudRecordId!);
+      final fileName = record.data['file'] as String?;
+      if (fileName == null || fileName.isEmpty) {
+        throw StateError('Cloud record has no file');
+      }
+
+      final url = _pb.files.getURL(record, fileName).toString();
+      final localPath = await _localPathFor(track.id, fileName);
+
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode >= 400) {
+        throw HttpException(
+          'Download failed (${response.statusCode})',
+          uri: Uri.parse(url),
+        );
+      }
+
+      final out = File(localPath);
+      await out.parent.create(recursive: true);
+      await out.writeAsBytes(response.bodyBytes);
+
+      await _db.db.update(
+        'tracks',
+        {
+          'file_path': localPath,
+          'cloud_state': TrackCloudState.uploaded.name,
+        },
+        where: 'id = ?',
+        whereArgs: [track.id],
+      );
+
+      return localPath;
+    } catch (e) {
+      await _setState(track.id, TrackCloudState.cloudOnly);
+      rethrow;
+    }
+  }
+
+  Future<void> _setState(String trackId, TrackCloudState state) async {
+    await _db.db.update(
+      'tracks',
+      {'cloud_state': state.name},
+      where: 'id = ?',
+      whereArgs: [trackId],
+    );
+  }
+
+  Future<String> _localPathFor(String trackId, String pbFileName) async {
+    final dir = await getApplicationSupportDirectory();
+    final ext = p.extension(pbFileName);
+    final synced = Directory(p.join(dir.path, 'synced_tracks'));
+    if (!await synced.exists()) await synced.create(recursive: true);
+    return p.join(synced.path, '$trackId$ext');
+  }
+}

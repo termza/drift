@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:audio_metadata_reader/audio_metadata_reader.dart';
@@ -10,12 +11,14 @@ import '../models/track.dart';
 import 'chapter_service.dart';
 import 'database.dart';
 import 'import_result.dart';
+import 'track_sync_service.dart';
 
 /// Owns the user's library of imported tracks.
 class LibraryService {
-  LibraryService(this._db, this._chapters);
+  LibraryService(this._db, this._chapters, this._sync);
   final AppDatabase _db;
   final ChapterService _chapters;
+  final TrackSyncService _sync;
 
   static const _audioExtensions = {
     '.mp3',
@@ -91,14 +94,33 @@ class LibraryService {
         final stat = await file.stat();
         final id = _stableId(file.path, stat.size);
 
-        // Already in library — count as skipped, not added.
-        if (await byId(id) != null) {
+        // Already in library — count as skipped, *unless* the existing row
+        // is a cloud-only catalog entry, in which case this import "adopts"
+        // it: we attach the local file_path and flip state to uploaded.
+        final existing = await byId(id);
+        if (existing != null) {
+          if (existing.cloudState == TrackCloudState.cloudOnly) {
+            await _db.db.update(
+              'tracks',
+              {
+                'file_path': file.path,
+                'cloud_state': TrackCloudState.uploaded.name,
+              },
+              where: 'id = ?',
+              whereArgs: [id],
+            );
+            final reloaded = await byId(id);
+            if (reloaded != null) added.add(reloaded);
+            continue;
+          }
           skipped++;
           continue;
         }
 
         final track = await _importNew(file, id);
         added.add(track);
+        // Background upload — never blocks import.
+        unawaited(_sync.uploadIfLocal(track));
       } catch (e) {
         failed.add(ImportFailure(fileName: name, reason: _shortError(e)));
       }

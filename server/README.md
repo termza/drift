@@ -76,7 +76,7 @@ WantedBy=multi-user.target
 
 ## Schema
 
-The `progress` collection (created by the migration):
+### `progress` collection
 
 | field               | type     | notes                                       |
 |---------------------|----------|---------------------------------------------|
@@ -90,6 +90,38 @@ Plus PocketBase's built-in `id`, `created`, `updated` fields.
 
 A unique index on `(user, track_id)` makes per-track upserts safe and prevents
 duplicates if the client ever races itself.
+
+### `tracks` collection
+
+Stores the actual audio files so Drift can sync your library across devices —
+import an audiobook on Windows, see it appear on iOS, tap to download and play.
+
+| field               | type     | notes                                       |
+|---------------------|----------|---------------------------------------------|
+| `user`              | relation | → `users`, cascade delete                   |
+| `track_id`          | text     | content-derived ID (same one as `progress`) |
+| `title`             | text     | display title                               |
+| `artist`            | text     | optional                                    |
+| `album`             | text     | optional                                    |
+| `duration_ms`       | number   | optional                                    |
+| `file_size`         | number   | informational                               |
+| `file_ext`          | text     | `mp3`, `m4b`, etc.                          |
+| `file`              | file     | the actual audio file (max 500MB)           |
+| `artwork`           | file     | optional, max 10MB                          |
+| `client_updated_at` | date     | LWW merge timestamp                         |
+
+Unique index on `(user, track_id)`.
+
+#### Raise the body-size limit
+
+PocketBase's global `maxBodySize` defaults to about 32MB, which is too small
+for most audiobooks. After applying this migration:
+
+1. Open the admin UI at `http://<server>:8090/_/`
+2. **Settings → Application** → **Max body size**
+3. Raise to **600MB** (or higher) to comfortably fit audiobook M4B files
+
+Without this, uploads of large files will fail with HTTP 413.
 
 ## Backup
 

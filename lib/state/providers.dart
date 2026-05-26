@@ -17,6 +17,7 @@ import '../services/pocketbase_backend.dart';
 import '../services/progress_store.dart';
 import '../services/sleep_timer.dart';
 import '../services/sync_service.dart';
+import '../services/track_sync_service.dart';
 
 final databaseProvider = Provider<AppDatabase>((ref) {
   throw UnimplementedError('Override in main()');
@@ -48,6 +49,7 @@ final libraryServiceProvider = Provider<LibraryService>((ref) {
   return LibraryService(
     ref.watch(databaseProvider),
     ref.watch(chapterServiceProvider),
+    ref.watch(trackSyncServiceProvider),
   );
 });
 
@@ -66,6 +68,7 @@ final audioPlayerProvider = Provider<AudioPlayerService>((ref) {
     ref.watch(progressStoreProvider),
     ref.watch(chapterServiceProvider),
     ref.read(playbackPrefsServiceProvider),
+    ref.watch(trackSyncServiceProvider),
   );
   ref.onDispose(service.dispose);
   return service;
@@ -74,6 +77,13 @@ final audioPlayerProvider = Provider<AudioPlayerService>((ref) {
 final bookmarksForTrackProvider =
     FutureProvider.family<List<Bookmark>, String>((ref, trackId) async {
   return ref.watch(bookmarkServiceProvider).listForTrack(trackId);
+});
+
+final trackSyncServiceProvider = Provider<TrackSyncService>((ref) {
+  return TrackSyncService(
+    ref.watch(databaseProvider),
+    ref.watch(authRepositoryProvider),
+  );
 });
 
 final chaptersForTrackProvider =

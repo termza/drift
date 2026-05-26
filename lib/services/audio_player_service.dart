@@ -10,6 +10,7 @@ import '../models/track.dart';
 import 'chapter_service.dart';
 import 'playback_prefs_service.dart';
 import 'progress_store.dart';
+import 'track_sync_service.dart';
 
 /// Wraps [AudioPlayer] with progress persistence, chapter awareness, and
 /// live application of [PlaybackPrefsService].
@@ -20,7 +21,12 @@ import 'progress_store.dart';
 /// is flushed to [ProgressStore] on a low-frequency timer to avoid SQLite
 /// spam; pause is the moment we stamp `last_paused_at`.
 class AudioPlayerService {
-  AudioPlayerService(this._progress, this._chapters, this._prefs) {
+  AudioPlayerService(
+    this._progress,
+    this._chapters,
+    this._prefs,
+    this._sync,
+  ) {
     _player = AudioPlayer();
     _prefs.addListener(_onPrefsChanged);
     _attachListeners();
@@ -29,6 +35,7 @@ class AudioPlayerService {
   final ProgressStore _progress;
   final ChapterService _chapters;
   final PlaybackPrefsService _prefs;
+  final TrackSyncService _sync;
   late final AudioPlayer _player;
   Track? _current;
   List<Chapter> _currentChapters = const [];
@@ -109,28 +116,38 @@ class AudioPlayerService {
   // ---------------------------------------------------------------------------
 
   Future<void> load(Track track, {bool autoplay = true}) async {
-    _current = track;
+    // Cloud-only entry → download to local storage before we can play.
+    var effective = track;
+    if (!effective.isLocal) {
+      final localPath = await _sync.downloadFile(effective);
+      effective = effective.copyWith(
+        filePath: localPath,
+        cloudState: TrackCloudState.uploaded,
+      );
+    }
 
-    final saved = await _progress.get(track.id);
+    _current = effective;
+
+    final saved = await _progress.get(effective.id);
     Duration? initial =
         (saved != null && !saved.completed) ? saved.position : null;
     initial = _maybeAutoRewind(initial, saved);
 
     await _player.setAudioSource(
       AudioSource.file(
-        track.filePath,
+        effective.filePath,
         tag: MediaItem(
-          id: track.id,
-          title: track.title,
-          artist: track.artist,
-          album: track.album,
-          duration: track.duration,
+          id: effective.id,
+          title: effective.title,
+          artist: effective.artist,
+          album: effective.album,
+          duration: effective.duration,
         ),
       ),
       initialPosition: initial,
     );
 
-    await _loadChapters(track);
+    await _loadChapters(effective);
     await _player.setSpeed(_prefs.current.speed);
 
     if (autoplay) await _player.play();

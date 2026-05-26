@@ -33,6 +33,7 @@ dependencies:
 
   # Sync backend
   pocketbase: ^0.21.0
+  http: ^1.2.2
 
   # Desktop window chrome
   window_manager: ^0.4.3
