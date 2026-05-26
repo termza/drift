@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/server_prefs.dart';
+import 'auth_repository.dart';
 import 'server_prefs_service.dart';
 
 /// What the embedded sync server is currently doing.
@@ -47,12 +48,13 @@ enum EmbeddedServerStatus {
 /// The service exposes itself as a [ChangeNotifier]; the Settings UI watches
 /// it for live status updates.
 class EmbeddedServerService extends ChangeNotifier {
-  EmbeddedServerService(this._prefs) {
+  EmbeddedServerService(this._prefs, this._auth) {
     _prefs.addListener(_onPrefsChanged);
     _maybeReact();
   }
 
   final ServerPrefsService _prefs;
+  final AuthRepository _auth;
   Process? _process;
   EmbeddedServerStatus _status = EmbeddedServerStatus.off;
   String? _errorMessage;
@@ -175,7 +177,15 @@ class EmbeddedServerService extends ChangeNotifier {
       return;
     }
 
-    // Step 5 — ensure sync user.
+    // Step 5a — ensure progress + tracks collections exist (idempotent).
+    final colsOk = await _ensureCollections(prefs);
+    if (!colsOk) {
+      _set(EmbeddedServerStatus.failed,
+          error: 'Server running, but provisioning collections failed.');
+      return;
+    }
+
+    // Step 5b — ensure sync user.
     final userOk = await _ensureSyncUser(prefs);
     if (!userOk) {
       _set(EmbeddedServerStatus.failed,
@@ -185,6 +195,23 @@ class EmbeddedServerService extends ChangeNotifier {
 
     // Step 6 — detect LAN IP.
     _lanIp = await _detectLanIp();
+
+    // Step 7 — auto-sign-in this device against the embedded server so the
+    // desktop's own library starts pushing up to it. Without this, the host
+    // app would be running the server but never *use* it. The sign-in
+    // points AuthRepository at http://127.0.0.1:<port> regardless of any
+    // previously-configured remote URL.
+    final localUrl = 'http://127.0.0.1:${prefs.port}';
+    try {
+      if (_auth.serverUrl != localUrl) {
+        await _auth.setServerUrl(localUrl);
+      }
+      if (!_auth.isSignedIn || _auth.userEmail != prefs.syncEmail) {
+        await _auth.signIn(prefs.syncEmail, prefs.syncPassword);
+      }
+    } catch (e) {
+      _appendLog('Auto-sign-in failed (UI sign-in still works): $e');
+    }
 
     _set(EmbeddedServerStatus.running);
   }
@@ -289,10 +316,118 @@ class EmbeddedServerService extends ChangeNotifier {
     return false;
   }
 
-  Future<bool> _ensureSyncUser(ServerPrefs prefs) async {
+  /// Idempotently create the `progress` and `tracks` collections on the
+  /// embedded server. Mirrors `server/pb_migrations/*.js` — we provision via
+  /// REST so the same code works whether or not the user copied those
+  /// migration files next to the PocketBase binary.
+  Future<bool> _ensureCollections(ServerPrefs prefs) async {
     final base = 'http://127.0.0.1:${prefs.port}/api';
-    // Sign in as admin (try v0.22+ endpoint, then legacy).
-    String? token;
+    final adminToken = await _adminToken(base, prefs);
+    if (adminToken == null) return false;
+
+    const rule = '@request.auth.id != "" && user = @request.auth.id';
+    final userField = {
+      'name': 'user',
+      'type': 'relation',
+      'required': true,
+      'collectionId': '_pb_users_auth_',
+      'cascadeDelete': true,
+      'maxSelect': 1,
+    };
+
+    final specs = <Map<String, dynamic>>[
+      {
+        'name': 'progress',
+        'type': 'base',
+        'listRule': rule,
+        'viewRule': rule,
+        'createRule': rule,
+        'updateRule': rule,
+        'deleteRule': rule,
+        'fields': [
+          userField,
+          {'name': 'track_id', 'type': 'text', 'required': true, 'max': 128},
+          {'name': 'position_ms', 'type': 'number', 'required': true, 'min': 0},
+          {'name': 'completed', 'type': 'bool'},
+          {'name': 'current_chapter', 'type': 'number', 'min': 0},
+          {'name': 'last_paused_at', 'type': 'date'},
+          {'name': 'client_updated_at', 'type': 'date', 'required': true},
+        ],
+        'indexes': [
+          'CREATE UNIQUE INDEX idx_progress_user_track ON progress (user, track_id)',
+        ],
+      },
+      {
+        'name': 'tracks',
+        'type': 'base',
+        'listRule': rule,
+        'viewRule': rule,
+        'createRule': rule,
+        'updateRule': rule,
+        'deleteRule': rule,
+        'fields': [
+          userField,
+          {'name': 'track_id', 'type': 'text', 'required': true, 'max': 128},
+          {'name': 'title', 'type': 'text', 'max': 500},
+          {'name': 'artist', 'type': 'text', 'max': 500},
+          {'name': 'album', 'type': 'text', 'max': 500},
+          {'name': 'duration_ms', 'type': 'number', 'min': 0},
+          {'name': 'file_size', 'type': 'number', 'min': 0},
+          {'name': 'file_ext', 'type': 'text', 'max': 16},
+          {
+            'name': 'file',
+            'type': 'file',
+            'required': true,
+            'maxSelect': 1,
+            'maxSize': 524288000,
+          },
+          {
+            'name': 'artwork',
+            'type': 'file',
+            'maxSelect': 1,
+            'maxSize': 10485760,
+          },
+          {'name': 'client_updated_at', 'type': 'date', 'required': true},
+        ],
+        'indexes': [
+          'CREATE UNIQUE INDEX idx_tracks_user_track ON tracks (user, track_id)',
+        ],
+      },
+    ];
+
+    for (final spec in specs) {
+      final name = spec['name'] as String;
+      try {
+        // Check existence.
+        final probe = await http.get(
+          Uri.parse('$base/collections/$name'),
+          headers: {'Authorization': adminToken},
+        );
+        if (probe.statusCode == 200) continue;
+      } catch (_) {}
+
+      try {
+        final r = await http.post(
+          Uri.parse('$base/collections'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': adminToken,
+          },
+          body: jsonEncode(spec),
+        );
+        if (r.statusCode < 200 || r.statusCode >= 300) {
+          _appendLog('Failed to create $name: ${r.statusCode} ${r.body}');
+          return false;
+        }
+      } catch (e) {
+        _appendLog('Failed to create $name: $e');
+        return false;
+      }
+    }
+    return true;
+  }
+
+  Future<String?> _adminToken(String base, ServerPrefs prefs) async {
     for (final ep in [
       '/collections/_superusers/auth-with-password',
       '/admins/auth-with-password',
@@ -307,11 +442,17 @@ class EmbeddedServerService extends ChangeNotifier {
           }),
         );
         if (r.statusCode == 200) {
-          token = (jsonDecode(r.body) as Map)['token'] as String?;
-          if (token != null) break;
+          final token = (jsonDecode(r.body) as Map)['token'] as String?;
+          if (token != null) return token;
         }
       } catch (_) {}
     }
+    return null;
+  }
+
+  Future<bool> _ensureSyncUser(ServerPrefs prefs) async {
+    final base = 'http://127.0.0.1:${prefs.port}/api';
+    final token = await _adminToken(base, prefs);
     if (token == null) return false;
 
     // Find existing user by email.

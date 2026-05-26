@@ -54,7 +54,10 @@ final serverPrefsServiceProvider =
 
 final embeddedServerServiceProvider =
     ChangeNotifierProvider<EmbeddedServerService>((ref) {
-  final svc = EmbeddedServerService(ref.watch(serverPrefsServiceProvider));
+  final svc = EmbeddedServerService(
+    ref.watch(serverPrefsServiceProvider),
+    ref.watch(authRepositoryProvider),
+  );
   ref.onDispose(svc.dispose);
   return svc;
 });

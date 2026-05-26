@@ -254,6 +254,23 @@ class TrackSyncService extends ChangeNotifier {
     return p.join(synced.path, '$trackId$ext');
   }
 
+  /// Walk the local tracks table and push anything that's still
+  /// [TrackCloudState.localOnly] up to the server. Existing tracks that
+  /// pre-date the user signing in get caught here.
+  Future<void> syncAllLocal() async {
+    if (!_signedIn) return;
+    final rows = await _db.db.query(
+      'tracks',
+      where: 'cloud_state = ? OR cloud_state IS NULL',
+      whereArgs: [TrackCloudState.localOnly.name],
+    );
+    for (final row in rows) {
+      final t = Track.fromRow(row);
+      if (!t.isLocal) continue;
+      await uploadIfLocal(t);
+    }
+  }
+
   /// Total bytes currently held in the synced-tracks cache directory. Cheap
   /// non-recursive scan — synced files are flat under one directory.
   Future<int> cacheSizeBytes() async {

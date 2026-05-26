@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -39,9 +41,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       _pulled = true;
       final auth = ref.read(authRepositoryProvider);
       if (!auth.isSignedIn) return;
-      await ref.read(trackSyncServiceProvider).pullCatalog();
+      final sync = ref.read(trackSyncServiceProvider);
+      await sync.pullCatalog();
       if (!mounted) return;
       ref.invalidate(libraryProvider);
+      // Push anything still local-only — catches tracks imported before the
+      // user signed in.
+      unawaited(sync.syncAllLocal());
     });
   }
 
@@ -170,14 +176,74 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     } catch (e, st) {
       debugPrint('Failed to load track ${t.id}: $e\n$st');
       if (!mounted) return;
+      final detail = e.toString();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Could not play "${t.title}": $e'),
+          duration: const Duration(seconds: 6),
+          content: Text('Could not play "${t.title}"'),
+          action: SnackBarAction(
+            label: 'Details',
+            onPressed: () => _showPlayError(t, detail, st.toString()),
+          ),
         ),
       );
     } finally {
       if (needsDownload && mounted) Navigator.of(context, rootNavigator: true).pop();
     }
+  }
+
+  void _showPlayError(Track t, String error, String stack) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text(
+          'Playback failed',
+          style: Theme.of(ctx).textTheme.titleLarge,
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(t.title,
+                  style: Theme.of(ctx).textTheme.titleSmall),
+              const SizedBox(height: 4),
+              Text(
+                'id: ${t.id}\nstate: ${t.cloudState.name}\npath: ${t.filePath.isEmpty ? "(none)" : t.filePath}',
+                style: Theme.of(ctx).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              Text('Error', style: Theme.of(ctx).textTheme.labelSmall),
+              const SizedBox(height: 4),
+              SelectableText(
+                error,
+                style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                      color: AppColors.danger,
+                    ),
+              ),
+              const SizedBox(height: 12),
+              Text('Stack (first 800 chars)',
+                  style: Theme.of(ctx).textTheme.labelSmall),
+              const SizedBox(height: 4),
+              SelectableText(
+                stack.length > 800 ? '${stack.substring(0, 800)}…' : stack,
+                style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                      color: AppColors.textTertiary,
+                      fontFamily: 'monospace',
+                    ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
