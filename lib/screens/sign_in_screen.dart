@@ -6,7 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../state/providers.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
+import '../utils/server_url.dart';
 import '../widgets/artwork.dart';
+import '../widgets/server_url_field.dart';
 
 class SignInScreen extends ConsumerStatefulWidget {
   const SignInScreen({super.key});
@@ -65,6 +67,9 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
       if (!mounted) return;
       unawaited(ref.read(syncServiceProvider).reconcile());
       Navigator.of(context).pop(true);
+    } on ServerUrlError catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.message);
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = _humanize(e));
@@ -141,18 +146,31 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                       ),
                       const SizedBox(height: Insets.xs),
                       Text(
-                        'Connect to your sync server to keep playback '
-                        'in sync across devices.',
+                        'Optional. Drift works fully offline — sign in only '
+                        'if you want playback + cached files to sync across '
+                        'devices.',
                         textAlign: TextAlign.center,
                         style: theme.textTheme.bodyMedium,
                       ),
-                      const SizedBox(height: Insets.xl),
-                      _Field(
-                        label: 'Server URL',
-                        controller: _serverCtl,
-                        hint: 'https://sync.example.com',
-                        keyboardType: TextInputType.url,
+                      const SizedBox(height: Insets.md),
+                      Center(
+                        child: TextButton.icon(
+                          onPressed: _busy
+                              ? null
+                              : () => Navigator.of(context).pop(),
+                          icon: Icon(
+                            Icons.cloud_off_outlined,
+                            size: 16,
+                            color: AppColors.textSecondary,
+                          ),
+                          label: Text(
+                            'Continue offline',
+                            style: TextStyle(color: AppColors.textSecondary),
+                          ),
+                        ),
                       ),
+                      const SizedBox(height: Insets.md),
+                      ServerUrlField(controller: _serverCtl),
                       const SizedBox(height: Insets.md),
                       _Field(
                         label: 'Email',

@@ -1,4 +1,4 @@
-# Audio Listen sync server
+# Drift sync server
 
 Self-hosted **PocketBase** instance — a single Go binary that provides:
 - Email/password auth
@@ -7,6 +7,34 @@ Self-hosted **PocketBase** instance — a single Go binary that provides:
 - REST API used by the Flutter client
 
 PocketBase stores data in SQLite, so there's no separate database to run.
+
+## Embedded server (recommended for personal use)
+
+The Drift desktop app can run PocketBase itself — no separate VPS, no
+`pocketbase serve` terminal. Settings → **SYNC SERVER ON THIS DEVICE** →
+toggle on, set a sync password, and the Settings panel shows the LAN URL +
+email other devices should use.
+
+To enable this, drop the **`pocketbase.exe`** binary (Linux/macOS: `pocketbase`)
+in *one* of these locations:
+
+1. Next to the Drift executable (same folder as `audio_listen.exe`)
+2. The Drift app-support directory — Settings will tell you the exact path
+   if the binary isn't found
+3. Anywhere in your system `PATH`
+
+The first time you enable the toggle, Drift will:
+- Run `pocketbase superuser upsert <generated-admin> <generated-password>`
+  to provision a hidden admin account
+- Spawn `pocketbase serve --http=0.0.0.0:<port>` so LAN devices reach it
+- Wait for `/api/health` to respond
+- Create a `drift@local` user with the password you chose
+
+Other devices then use the displayed `http://<your-ip>:8090`, email
+`drift@local`, and your sync password to sign in.
+
+**Note**: Windows Firewall will prompt for permission the first time
+PocketBase listens on `0.0.0.0` — approve to let LAN devices connect.
 
 ## Local development
 

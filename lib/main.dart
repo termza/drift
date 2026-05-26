@@ -11,6 +11,7 @@ import 'services/appearance_prefs_service.dart';
 import 'services/auth_repository.dart';
 import 'services/database.dart';
 import 'services/playback_prefs_service.dart';
+import 'services/server_prefs_service.dart';
 import 'state/providers.dart';
 
 Future<void> main() async {
@@ -51,6 +52,7 @@ Future<void> main() async {
   final auth = await AuthRepository.init();
   final playbackPrefs = await PlaybackPrefsService.init();
   final appearancePrefs = await AppearancePrefsService.init();
+  final serverPrefs = await ServerPrefsService.init();
 
   runApp(
     ProviderScope(
@@ -59,6 +61,7 @@ Future<void> main() async {
         authRepositoryProvider.overrideWith((_) => auth),
         playbackPrefsServiceProvider.overrideWith((_) => playbackPrefs),
         appearancePrefsServiceProvider.overrideWith((_) => appearancePrefs),
+        serverPrefsServiceProvider.overrideWith((_) => serverPrefs),
       ],
       child: const AudioListenApp(),
     ),

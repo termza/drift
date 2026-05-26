@@ -1,8 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:pocketbase/pocketbase.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../utils/server_url.dart';
 
 /// Holds the PocketBase client + persisted auth.
 ///
@@ -14,6 +17,8 @@ class AuthRepository extends ChangeNotifier {
 
   static const _kServerUrl = 'sync.server_url';
   static const _kAuthPayload = 'sync.auth_payload';
+  static const _kRecentServers = 'sync.recent_servers';
+  static const _maxRecents = 5;
 
   /// Default server during development. Override in the sign-in screen.
   static const _defaultUrl = 'http://127.0.0.1:8090';
@@ -47,18 +52,83 @@ class AuthRepository extends ChangeNotifier {
   String? get userId => _pb.authStore.record?.id;
   String? get userEmail => _pb.authStore.record?.data['email'] as String?;
 
+  /// Accepts any of the shapes [normalizeServerUrl] supports: bare IP,
+  /// IP:port, hostname, full URL. Throws [ServerUrlError] for inputs that
+  /// can't be coerced into a valid origin.
   Future<void> setServerUrl(String url) async {
-    final cleaned = url.trim().replaceAll(RegExp(r'/+$'), '');
-    if (cleaned == _pb.baseURL) return;
+    final normalized = normalizeServerUrl(url);
+    if (normalized.url == _pb.baseURL) return;
 
-    await _prefs.setString(_kServerUrl, cleaned);
+    await _prefs.setString(_kServerUrl, normalized.url);
+    await _rememberServer(normalized.url);
     // Tearing down and rebuilding is simpler than mutating the existing client.
     final authStore = AsyncAuthStore(
       save: (data) async => _prefs.setString(_kAuthPayload, data),
       initial: _prefs.getString(_kAuthPayload),
     );
-    _pb = PocketBase(cleaned, authStore: authStore);
+    _pb = PocketBase(normalized.url, authStore: authStore);
     notifyListeners();
+  }
+
+  /// Recent server URLs (most-recent first), persisted across launches so the
+  /// user can hop between dev / home / remote without retyping.
+  List<String> get recentServers =>
+      _prefs.getStringList(_kRecentServers) ?? const [];
+
+  Future<void> _rememberServer(String url) async {
+    final list = recentServers.toList();
+    list.remove(url);
+    list.insert(0, url);
+    while (list.length > _maxRecents) {
+      list.removeLast();
+    }
+    await _prefs.setStringList(_kRecentServers, list);
+  }
+
+  Future<void> forgetServer(String url) async {
+    final list = recentServers.toList()..remove(url);
+    await _prefs.setStringList(_kRecentServers, list);
+    notifyListeners();
+  }
+
+  /// Try to reach PocketBase's health endpoint without changing the saved
+  /// URL. Returns a friendly result the UI can render.
+  Future<ConnectionTest> testConnection(String url) async {
+    final NormalizedServerUrl normalized;
+    try {
+      normalized = normalizeServerUrl(url);
+    } on ServerUrlError catch (e) {
+      return ConnectionTest(ok: false, message: e.message);
+    } catch (e) {
+      return ConnectionTest(ok: false, message: 'Invalid URL');
+    }
+
+    try {
+      final resp = await http
+          .get(Uri.parse('${normalized.url}/api/health'))
+          .timeout(const Duration(seconds: 5));
+      if (resp.statusCode == 200) {
+        return ConnectionTest(
+          ok: true,
+          message: 'Connected to ${normalized.display}',
+          normalizedUrl: normalized.url,
+        );
+      }
+      return ConnectionTest(
+        ok: false,
+        message: 'Server responded ${resp.statusCode}',
+      );
+    } on TimeoutException {
+      return ConnectionTest(
+        ok: false,
+        message: 'Timed out — check the host and port',
+      );
+    } catch (_) {
+      return ConnectionTest(
+        ok: false,
+        message: "Couldn't reach the server",
+      );
+    }
   }
 
   Future<void> signIn(String email, String password) async {
@@ -92,4 +162,15 @@ class AuthRepository extends ChangeNotifier {
       notifyListeners();
     }
   }
+}
+
+class ConnectionTest {
+  const ConnectionTest({
+    required this.ok,
+    required this.message,
+    this.normalizedUrl,
+  });
+  final bool ok;
+  final String message;
+  final String? normalizedUrl;
 }
