@@ -95,6 +95,17 @@ class LibraryService {
         final stat = await file.stat();
         final id = _stableId(file.path, stat.size);
 
+        // On iOS/Android, file_picker hands us a *temporary* path that the OS
+        // purges later — playing the track tomorrow would fail with the
+        // cryptic AVFoundation -11800 "could not be completed" error. Copy
+        // into a persistent app-owned location and use *that* path from now
+        // on. Desktop file picks already return stable paths so we skip
+        // the copy there to avoid duplicating large M4B files.
+        var persistent = file;
+        if (Platform.isIOS || Platform.isAndroid) {
+          persistent = await _ensurePersistentCopy(file, id);
+        }
+
         // Already in library — count as skipped, *unless* the existing row
         // is a cloud-only catalog entry, in which case this import "adopts"
         // it: we attach the local file_path and flip state to uploaded.
@@ -104,7 +115,7 @@ class LibraryService {
             await _db.db.update(
               'tracks',
               {
-                'file_path': file.path,
+                'file_path': persistent.path,
                 'cloud_state': TrackCloudState.uploaded.name,
               },
               where: 'id = ?',
@@ -118,7 +129,7 @@ class LibraryService {
           continue;
         }
 
-        final track = await _importNew(file, id);
+        final track = await _importNew(persistent, id);
         added.add(track);
         // Background upload — never blocks import.
         unawaited(_sync.uploadIfLocal(track));
@@ -203,6 +214,24 @@ class LibraryService {
 
   Future<void> remove(String trackId) async {
     await _db.db.delete('tracks', where: 'id = ?', whereArgs: [trackId]);
+  }
+
+  /// Copy a freshly-picked file into a persistent app-owned directory so
+  /// iOS doesn't garbage-collect it out from under us. Returns the new file.
+  /// Idempotent — re-importing the same content reuses the existing copy.
+  Future<File> _ensurePersistentCopy(File src, String trackId) async {
+    final dir = await getApplicationSupportDirectory();
+    final importsDir = Directory(p.join(dir.path, 'imports'));
+    if (!await importsDir.exists()) await importsDir.create(recursive: true);
+    final ext = p.extension(src.path).toLowerCase();
+    final dest = File(p.join(importsDir.path, '$trackId$ext'));
+    if (await dest.exists()) {
+      final destLen = await dest.length();
+      final srcLen = await src.length();
+      if (destLen == srcLen) return dest;
+    }
+    await src.copy(dest.path);
+    return dest;
   }
 
   Future<String?> _saveArtwork(String trackId, List<int> bytes) async {

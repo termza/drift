@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
@@ -123,6 +124,17 @@ class AudioPlayerService {
       effective = effective.copyWith(
         filePath: localPath,
         cloudState: TrackCloudState.uploaded,
+      );
+    }
+
+    // Guard before handing the path to AVPlayer — a missing file on iOS
+    // surfaces as the unhelpful AVFoundation error -11800. Catching it
+    // here lets us tell the user *why* (and to re-import) instead.
+    if (!await File(effective.filePath).exists()) {
+      throw StateError(
+        'Audio file is missing on disk:\n${effective.filePath}\n\n'
+        'On iOS this usually means the OS purged the temporary import '
+        'directory. Re-import the file from Library → + to restore it.',
       );
     }
 
