@@ -11,9 +11,16 @@ import '../widgets/track_tile.dart';
 class FavoritesScreen extends ConsumerWidget {
   const FavoritesScreen({super.key});
 
-  Future<void> _play(WidgetRef ref, Track t) async {
-    await ref.read(audioPlayerProvider).load(t);
-    ref.read(currentTrackProvider.notifier).state = t;
+  Future<void> _play(BuildContext context, WidgetRef ref, Track t) async {
+    try {
+      await ref.read(audioPlayerProvider).load(t);
+      ref.read(currentTrackProvider.notifier).state = t;
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not play "${t.title}": $e')),
+      );
+    }
   }
 
   @override
@@ -57,8 +64,8 @@ class FavoritesScreen extends ConsumerWidget {
                 ),
                 SliverList.separated(
                   itemCount: tracks.length,
-                  separatorBuilder: (_, __) => const Padding(
-                    padding: EdgeInsets.only(left: 84),
+                  separatorBuilder: (_, __) => Padding(
+                    padding: const EdgeInsets.only(left: 84),
                     child: Divider(
                       height: 0.5,
                       color: AppColors.borderSubtle,
@@ -80,7 +87,7 @@ class FavoritesScreen extends ConsumerWidget {
                       isPlaying:
                           isCurrent && (snap?.playing ?? false),
                       progressFraction: fraction,
-                      onTap: () => _play(ref, t),
+                      onTap: () => _play(context, ref, t),
                     );
                   },
                 ),
@@ -125,7 +132,7 @@ class _Header extends StatelessWidget {
               ),
             ],
           ),
-          child: const Icon(
+          child: Icon(
             Icons.favorite_rounded,
             color: AppColors.accentInk,
             size: 44,

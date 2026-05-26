@@ -15,9 +15,11 @@ class ArtworkPalette {
   final Color top;
   final Color bottom;
 
+  // Hardcoded fallback colors — this is `static const` and AppColors values
+  // are now runtime-mutable, so the bottom can't reference AppColors.bg.
   static const fallback = ArtworkPalette(
     top: Color(0xFF2A1F18),
-    bottom: AppColors.bg,
+    bottom: Color(0xFF000000),
   );
 }
 
@@ -47,6 +49,7 @@ final artworkPaletteProvider =
     // Deepen toward black at the bottom so the gradient ends in our app bg.
     final top = _saturateDarken(primary, 0.4);
     return ArtworkPalette(top: top, bottom: AppColors.bg);
+    // (Above is a non-const ctor call — AppColors.bg is fine here.)
   } catch (_) {
     return ArtworkPalette.fallback;
   }

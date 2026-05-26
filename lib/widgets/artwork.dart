@@ -53,7 +53,7 @@ class _BrandFallback extends StatelessWidget {
       child: Image.asset(
         'assets/brand_vinyl.png',
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => const Icon(
+        errorBuilder: (_, __, ___) => Icon(
           Icons.album_outlined,
           color: AppColors.accent,
           size: 22,
@@ -89,7 +89,7 @@ class BrandMark extends StatelessWidget {
         child: Image.asset(
           'assets/brand_vinyl.png',
           fit: BoxFit.contain,
-          errorBuilder: (_, __, ___) => const Icon(
+          errorBuilder: (_, __, ___) => Icon(
             Icons.album_outlined,
             color: AppColors.accent,
           ),

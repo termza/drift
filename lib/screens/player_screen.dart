@@ -7,8 +7,11 @@ import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../widgets/artwork.dart';
 import '../widgets/artwork_palette.dart';
+import '../widgets/bookmark_sheet.dart';
+import '../widgets/chapter_sheet.dart';
 import '../widgets/scrub_bar.dart';
 import '../widgets/sleep_timer_sheet.dart';
+import '../widgets/speed_sheet.dart';
 
 /// Apple-Music-style Now Playing. Big centered artwork, bold title block
 /// below, slim scrubber, prominent transport row, secondary controls in a
@@ -80,6 +83,7 @@ class PlayerScreen extends ConsumerWidget {
                   const Spacer(flex: 2),
                   _TitleBlock(title: track.title, artist: track.artist),
                   const SizedBox(height: Insets.md),
+                  const _ChapterStrip(),
                   const _ScrubSection(),
                   const SizedBox(height: 12),
                   const _Transport(),
@@ -174,6 +178,10 @@ class _MoreMenu extends ConsumerWidget {
         switch (v) {
           case 'restart':
             await ref.read(audioPlayerProvider).seek(Duration.zero);
+          case 'bookmarks':
+            if (trackId != null) {
+              await showBookmarkSheet(context, trackId!);
+            }
           case 'mark_done':
             if (trackId != null) {
               await ref.read(progressStoreProvider).markCompleted(trackId!);
@@ -195,6 +203,14 @@ class _MoreMenu extends ConsumerWidget {
         }
       },
       itemBuilder: (_) => [
+        const PopupMenuItem(
+          value: 'bookmarks',
+          height: 42,
+          child: _MenuItem(
+            icon: Icons.bookmark_outline_rounded,
+            label: 'Bookmarks',
+          ),
+        ),
         const PopupMenuItem(
           value: 'restart',
           height: 42,
@@ -357,10 +373,24 @@ class _Transport extends ConsumerWidget {
           orElse: () => false,
         );
 
+    // Subscribe to the chapter index stream so the prev/next enabled state
+    // updates live as playback crosses chapter boundaries.
+    final chapterIdx = ref.watch(currentChapterIndexProvider).valueOrNull;
+    final player = ref.watch(audioPlayerProvider);
+    final hasChapters = player.hasChapters;
+    final canPrev = hasChapters;
+    final canNext = hasChapters &&
+        chapterIdx != null &&
+        chapterIdx + 1 < player.currentChapters.length;
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
-        _Ghost(icon: Icons.skip_previous_rounded, size: 38, onTap: () {}),
+        _Ghost(
+          icon: Icons.skip_previous_rounded,
+          size: 38,
+          onTap: canPrev ? () => player.prevChapter() : null,
+        ),
         InkResponse(
           onTap: () => ref.read(audioPlayerProvider).togglePlay(),
           radius: 48,
@@ -377,8 +407,81 @@ class _Transport extends ConsumerWidget {
             ),
           ),
         ),
-        _Ghost(icon: Icons.skip_next_rounded, size: 38, onTap: () {}),
+        _Ghost(
+          icon: Icons.skip_next_rounded,
+          size: 38,
+          onTap: canNext ? () => player.nextChapter() : null,
+        ),
       ],
+    );
+  }
+}
+
+/// Compact pill above the scrubber showing the current chapter. Tapping
+/// opens the full chapter list. Renders nothing when the track has none.
+class _ChapterStrip extends ConsumerWidget {
+  const _ChapterStrip();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Watching the stream is what makes us rebuild on chapter change.
+    ref.watch(currentChapterIndexProvider);
+    final player = ref.watch(audioPlayerProvider);
+    if (!player.hasChapters) return const SizedBox.shrink();
+
+    final ch = player.currentChapter;
+    final idx = player.currentChapterIndex ?? 0;
+    final total = player.currentChapters.length;
+    final title = (ch?.title != null && ch!.title!.isNotEmpty)
+        ? ch.title!
+        : 'Chapter ${idx + 1}';
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 6),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(Radii.sm),
+        onTap: () => showChapterSheet(context),
+        child: Padding(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+          child: Row(
+            children: [
+              Icon(
+                Icons.list_rounded,
+                size: 16,
+                color: AppColors.accent,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: Insets.sm),
+              Text(
+                '${idx + 1} of $total',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: AppColors.textSecondary,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+              const SizedBox(width: 2),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 18,
+                color: AppColors.textTertiary,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -390,17 +493,22 @@ class _Ghost extends StatelessWidget {
     this.size = 32,
   });
   final IconData icon;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final double size;
 
   @override
   Widget build(BuildContext context) {
+    final enabled = onTap != null;
     return InkResponse(
       onTap: onTap,
       radius: 32,
       child: Padding(
         padding: const EdgeInsets.all(Insets.sm),
-        child: Icon(icon, size: size, color: AppColors.textPrimary),
+        child: AnimatedOpacity(
+          duration: Motion.fast,
+          opacity: enabled ? 1.0 : 0.28,
+          child: Icon(icon, size: size, color: AppColors.textPrimary),
+        ),
       ),
     );
   }
@@ -469,17 +577,17 @@ class _SkipBtn extends StatelessWidget {
   }
 }
 
-class _SpeedPill extends ConsumerWidget {
+class _SpeedPill extends StatelessWidget {
   const _SpeedPill({required this.speed});
   final double speed;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final label =
         '${speed.toStringAsFixed(2).replaceFirst(RegExp(r'0$'), '')}×';
     return InkWell(
-      onTap: () => _cycle(ref, speed),
+      onTap: () => showSpeedSheet(context),
       borderRadius: BorderRadius.circular(Radii.sm),
       child: Container(
         padding: const EdgeInsets.symmetric(
@@ -500,13 +608,6 @@ class _SpeedPill extends ConsumerWidget {
         ),
       ),
     );
-  }
-
-  void _cycle(WidgetRef ref, double current) {
-    const steps = [1.0, 1.25, 1.5, 1.75, 2.0, 0.75];
-    final idx = steps.indexWhere((s) => (s - current).abs() < 0.01);
-    final next = steps[(idx + 1) % steps.length];
-    ref.read(audioPlayerProvider).setSpeed(next);
   }
 }
 

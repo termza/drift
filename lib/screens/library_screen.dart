@@ -1,12 +1,17 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/appearance_prefs.dart';
 import '../models/track.dart';
+import '../services/import_result.dart';
 import '../state/providers.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../widgets/continue_card.dart';
 import '../widgets/empty_library.dart';
+import '../widgets/track_compact_tile.dart';
+import '../widgets/track_grid_tile.dart';
 import '../widgets/track_tile.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
@@ -21,24 +26,108 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   bool _searchOpen = false;
 
   Future<void> _import() async {
-    final added = await ref.read(libraryServiceProvider).pickAndImport();
+    final result = await ref.read(libraryServiceProvider).pickAndImport();
     if (!mounted) return;
-    if (added.isNotEmpty) {
+    if (result.isEmpty) return;
+    if (result.added.isNotEmpty) {
       ref.invalidate(libraryProvider);
       ref.invalidate(allProgressProvider);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Added ${added.length} ${added.length == 1 ? 'track' : 'tracks'}',
+    }
+    final parts = <String>[];
+    if (result.added.isNotEmpty) parts.add('Added ${result.added.length}');
+    if (result.skipped > 0) parts.add('Skipped ${result.skipped}');
+    if (result.failed.isNotEmpty) parts.add('Failed ${result.failed.length}');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(parts.join(' · ')),
+        action: result.failed.isNotEmpty
+            ? SnackBarAction(
+                label: 'Details',
+                onPressed: () => _showFailures(result.failed),
+              )
+            : null,
+      ),
+    );
+  }
+
+  void _showFailures(List<ImportFailure> failures) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.bg,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            Insets.gutter,
+            Insets.md,
+            Insets.gutter,
+            Insets.xl,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "Couldn't import",
+                style: Theme.of(ctx).textTheme.headlineLarge,
+              ),
+              const SizedBox(height: Insets.md),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 360),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: failures.length,
+                  separatorBuilder: (_, __) => Divider(
+                    height: 0.5,
+                    color: AppColors.borderSubtle,
+                  ),
+                  itemBuilder: (_, i) {
+                    final f = failures[i];
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            f.fileName,
+                            style: Theme.of(ctx).textTheme.titleSmall,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            f.reason,
+                            style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                                  color: AppColors.textSecondary,
+                                ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
         ),
-      );
-    }
+      ),
+    );
   }
 
   Future<void> _play(Track t) async {
-    await ref.read(audioPlayerProvider).load(t);
-    ref.read(currentTrackProvider.notifier).state = t;
+    try {
+      await ref.read(audioPlayerProvider).load(t);
+      ref.read(currentTrackProvider.notifier).state = t;
+    } catch (e, st) {
+      // Surface playback failures instead of swallowing them silently.
+      debugPrint('Failed to load track ${t.id}: $e\n$st');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not play "${t.title}": $e'),
+        ),
+      );
+    }
   }
 
   @override
@@ -53,6 +142,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           orElse: () => null,
         );
     final sort = ref.watch(librarySortProvider);
+    final appearanceService = ref.watch(appearancePrefsServiceProvider);
+    final viewMode = appearanceService.current.libraryViewMode;
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -136,6 +227,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                           ),
                         ),
                         const Spacer(),
+                        _ViewModeToggle(
+                          current: viewMode,
+                          onPick: (m) =>
+                              appearanceService.setLibraryViewMode(m),
+                        ),
+                        const SizedBox(width: 6),
                         _SortButton(
                           current: sort,
                           onSelected: (s) => ref
@@ -160,33 +257,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                     ),
                   )
                 else
-                  SliverList.separated(
-                    itemCount: filtered.length,
-                    separatorBuilder: (_, __) => const Padding(
-                      padding: EdgeInsets.only(left: 84),
-                      child: Divider(
-                        height: 0.5,
-                        color: AppColors.borderSubtle,
-                      ),
-                    ),
-                    itemBuilder: (context, i) {
-                      final t = filtered[i];
-                      final isCurrent = current?.id == t.id;
-                      final p = progressMap?[t.id];
-                      final dur = t.duration?.inMilliseconds;
-                      final fraction = (p == null ||
-                              dur == null ||
-                              dur == 0)
-                          ? null
-                          : p.position.inMilliseconds / dur;
-                      return TrackTile(
-                        track: t,
-                        isCurrent: isCurrent,
-                        isPlaying: isCurrent && (snap?.playing ?? false),
-                        progressFraction: fraction,
-                        onTap: () => _play(t),
-                      );
-                    },
+                  _buildTrackSliver(
+                    mode: viewMode,
+                    tracks: filtered,
+                    current: current,
+                    snap: snap,
+                    progressMap: progressMap,
                   ),
                 const SliverToBoxAdapter(child: SizedBox(height: 140)),
               ],
@@ -195,6 +271,98 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildTrackSliver({
+    required LibraryViewMode mode,
+    required List<Track> tracks,
+    required Track? current,
+    required dynamic snap,
+    required Map<String, dynamic>? progressMap,
+  }) {
+    switch (mode) {
+      case LibraryViewMode.list:
+        return SliverList.separated(
+          itemCount: tracks.length,
+          separatorBuilder: (_, __) => Padding(
+            padding: const EdgeInsets.only(left: 84),
+            child: Divider(
+              height: 0.5,
+              color: AppColors.borderSubtle,
+            ),
+          ),
+          itemBuilder: (context, i) {
+            final t = tracks[i];
+            final isCurrent = current?.id == t.id;
+            final p = progressMap?[t.id];
+            final dur = t.duration?.inMilliseconds;
+            final fraction = (p == null || dur == null || dur == 0)
+                ? null
+                : p.position.inMilliseconds / dur;
+            return TrackTile(
+              track: t,
+              isCurrent: isCurrent,
+              isPlaying: isCurrent && (snap?.playing ?? false),
+              progressFraction: fraction,
+              onTap: () => _play(t),
+            );
+          },
+        );
+      case LibraryViewMode.grid:
+        return SliverPadding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: Insets.gutter - 4,
+          ),
+          sliver: SliverLayoutBuilder(
+            builder: (context, constraints) {
+              // Aim for ~160px tiles, snapping to whole columns.
+              final cols =
+                  (constraints.crossAxisExtent / 170).floor().clamp(2, 8);
+              return SliverGrid(
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: cols,
+                  // Slightly taller than wide to fit title + artist.
+                  childAspectRatio: 0.78,
+                ),
+                delegate: SliverChildBuilderDelegate(
+                  (context, i) {
+                    final t = tracks[i];
+                    final isCurrent = current?.id == t.id;
+                    return TrackGridTile(
+                      track: t,
+                      isCurrent: isCurrent,
+                      isPlaying: isCurrent && (snap?.playing ?? false),
+                      onTap: () => _play(t),
+                    );
+                  },
+                  childCount: tracks.length,
+                ),
+              );
+            },
+          ),
+        );
+      case LibraryViewMode.compact:
+        return SliverList.separated(
+          itemCount: tracks.length,
+          separatorBuilder: (_, __) => Padding(
+            padding: const EdgeInsets.only(left: 30, right: Insets.gutter),
+            child: Divider(
+              height: 0.5,
+              color: AppColors.borderSubtle,
+            ),
+          ),
+          itemBuilder: (context, i) {
+            final t = tracks[i];
+            final isCurrent = current?.id == t.id;
+            return TrackCompactTile(
+              track: t,
+              isCurrent: isCurrent,
+              isPlaying: isCurrent && (snap?.playing ?? false),
+              onTap: () => _play(t),
+            );
+          },
+        );
+    }
   }
 
   List<Track> _filterAndSort(List<Track> tracks, LibrarySort sort) {
@@ -273,7 +441,7 @@ class _Header extends StatelessWidget {
                     child: TextField(
                       autofocus: true,
                       onChanged: onQuery,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         hintText: 'Search title, artist, album',
                         prefixIcon: Icon(
                           Icons.search_rounded,
@@ -305,6 +473,79 @@ class _IconBtn extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(Insets.xs),
         child: Icon(icon, size: 24, color: AppColors.accent),
+      ),
+    );
+  }
+}
+
+class _ViewModeToggle extends StatelessWidget {
+  const _ViewModeToggle({required this.current, required this.onPick});
+  final LibraryViewMode current;
+  final ValueChanged<LibraryViewMode> onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: AppColors.fillTertiary,
+        borderRadius: BorderRadius.circular(Radii.sm),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final m in LibraryViewMode.values)
+            _ToggleSegment(
+              icon: switch (m) {
+                LibraryViewMode.list => Icons.view_list_rounded,
+                LibraryViewMode.grid => Icons.grid_view_rounded,
+                LibraryViewMode.compact => Icons.density_small_rounded,
+              },
+              tooltip: switch (m) {
+                LibraryViewMode.list => 'List view',
+                LibraryViewMode.grid => 'Grid view',
+                LibraryViewMode.compact => 'Compact view',
+              },
+              selected: m == current,
+              onTap: () => onPick(m),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ToggleSegment extends StatelessWidget {
+  const _ToggleSegment({
+    required this.icon,
+    required this.tooltip,
+    required this.selected,
+    required this.onTap,
+  });
+  final IconData icon;
+  final String tooltip;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(Radii.sm - 2),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          decoration: BoxDecoration(
+            color: selected ? AppColors.surface : Colors.transparent,
+            borderRadius: BorderRadius.circular(Radii.sm - 2),
+          ),
+          child: Icon(
+            icon,
+            size: 16,
+            color: selected ? AppColors.accent : AppColors.textSecondary,
+          ),
+        ),
       ),
     );
   }
@@ -348,7 +589,7 @@ class _SortButton extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 4),
-            const Icon(
+            Icon(
               Icons.unfold_more_rounded,
               size: 16,
               color: AppColors.textTertiary,
@@ -378,7 +619,7 @@ class _SortButton extends StatelessWidget {
         children: [
           Expanded(child: Text(label)),
           if (value == current)
-            const Icon(Icons.check_rounded,
+            Icon(Icons.check_rounded,
                 size: 16, color: AppColors.accent),
         ],
       ),

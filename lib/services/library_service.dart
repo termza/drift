@@ -7,12 +7,15 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../models/track.dart';
+import 'chapter_service.dart';
 import 'database.dart';
+import 'import_result.dart';
 
 /// Owns the user's library of imported tracks.
 class LibraryService {
-  LibraryService(this._db);
+  LibraryService(this._db, this._chapters);
   final AppDatabase _db;
+  final ChapterService _chapters;
 
   static const _audioExtensions = {
     '.mp3',
@@ -23,6 +26,12 @@ class LibraryService {
     '.flac',
     '.ogg',
     '.opus',
+    '.wma',
+    '.aiff',
+    '.aif',
+    '.alac',
+    '.mka',
+    '.m4r',
   };
 
   Future<List<Track>> listAll() async {
@@ -41,39 +50,64 @@ class LibraryService {
     return Track.fromRow(rows.first);
   }
 
-  /// Prompt the user to pick audio files, import them, and return the new
-  /// tracks (skipping duplicates).
-  Future<List<Track>> pickAndImport() async {
-    final result = await FilePicker.platform.pickFiles(
+  /// Prompt the user to pick audio files and import them. Returns a structured
+  /// [ImportResult] so the caller can surface skips and per-file failures
+  /// instead of silently dropping them.
+  Future<ImportResult> pickAndImport() async {
+    final picked = await FilePicker.platform.pickFiles(
       allowMultiple: true,
       type: FileType.custom,
       allowedExtensions: _audioExtensions
           .map((e) => e.replaceFirst('.', ''))
           .toList(),
     );
-    if (result == null) return const [];
+    if (picked == null) return const ImportResult();
 
     final added = <Track>[];
-    for (final f in result.files) {
+    var skipped = 0;
+    final failed = <ImportFailure>[];
+
+    for (final f in picked.files) {
       final path = f.path;
       if (path == null) continue;
-      final t = await _importFile(File(path));
-      if (t != null) added.add(t);
+      final name = p.basename(path);
+      try {
+        final file = File(path);
+        final ext = p.extension(path).toLowerCase();
+        if (!_audioExtensions.contains(ext)) {
+          failed.add(ImportFailure(
+            fileName: name,
+            reason: 'Unsupported format ($ext)',
+          ));
+          continue;
+        }
+        if (!await file.exists()) {
+          failed.add(ImportFailure(
+            fileName: name,
+            reason: 'File not found',
+          ));
+          continue;
+        }
+        final stat = await file.stat();
+        final id = _stableId(file.path, stat.size);
+
+        // Already in library — count as skipped, not added.
+        if (await byId(id) != null) {
+          skipped++;
+          continue;
+        }
+
+        final track = await _importNew(file, id);
+        added.add(track);
+      } catch (e) {
+        failed.add(ImportFailure(fileName: name, reason: _shortError(e)));
+      }
     }
-    return added;
+
+    return ImportResult(added: added, skipped: skipped, failed: failed);
   }
 
-  Future<Track?> _importFile(File file) async {
-    final ext = p.extension(file.path).toLowerCase();
-    if (!_audioExtensions.contains(ext)) return null;
-
-    final stat = await file.stat();
-    final id = _stableId(file.path, stat.size);
-
-    // Skip if we already have this track.
-    final existing = await byId(id);
-    if (existing != null) return existing;
-
+  Future<Track> _importNew(File file, String id) async {
     String title = p.basenameWithoutExtension(file.path);
     String? artist;
     String? album;
@@ -93,7 +127,7 @@ class LibraryService {
         artworkPath = await _saveArtwork(id, meta.pictures.first.bytes);
       }
     } catch (_) {
-      // Metadata read failures are non-fatal; we still index the file.
+      // Metadata read failures are non-fatal — we still index the file.
     }
 
     final track = Track(
@@ -112,6 +146,20 @@ class LibraryService {
       track.toRow(),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+
+    // Chapter parsing is best-effort and never blocks an import. Failures here
+    // just mean the track plays without chapter nav.
+    try {
+      final chapters = await _chapters.parseFromFile(
+        trackId: id,
+        file: file,
+        trackDuration: duration,
+      );
+      if (chapters.isNotEmpty) {
+        await _chapters.save(id, chapters);
+      }
+    } catch (_) {}
+
     return track;
   }
 
@@ -137,5 +185,10 @@ class LibraryService {
     final name = p.basename(path).toLowerCase();
     return '${name}_$size'.hashCode.toRadixString(16).padLeft(8, '0') +
         size.toRadixString(16);
+  }
+
+  String _shortError(Object e) {
+    final s = e.toString();
+    return s.length > 200 ? '${s.substring(0, 197)}…' : s;
   }
 }

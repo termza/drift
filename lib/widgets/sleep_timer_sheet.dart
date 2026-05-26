@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../services/sleep_timer.dart';
 import '../state/providers.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
@@ -30,6 +31,19 @@ class _SleepTimerSheet extends ConsumerWidget {
     final theme = Theme.of(context);
     final timer = ref.watch(sleepTimerProvider);
     final remaining = timer.remaining;
+    final player = ref.watch(audioPlayerProvider);
+    final hasChapters = player.hasChapters;
+
+    String subtitle;
+    if (!timer.isActive) {
+      subtitle = 'Pause playback after…';
+    } else if (timer.mode == SleepTimerMode.endOfChapter) {
+      subtitle = 'Stops at end of current chapter';
+    } else if (remaining != null) {
+      subtitle = 'Stops in ${_fmtCompact(remaining)}';
+    } else {
+      subtitle = 'Active';
+    }
 
     return SafeArea(
       child: Padding(
@@ -56,12 +70,7 @@ class _SleepTimerSheet extends ConsumerWidget {
             const SizedBox(height: Insets.md),
             Text('Sleep Timer', style: theme.textTheme.headlineLarge),
             const SizedBox(height: 4),
-            Text(
-              timer.isActive && remaining != null
-                  ? 'Stops in ${_fmtCompact(remaining)}'
-                  : 'Pause playback after…',
-              style: theme.textTheme.bodyMedium,
-            ),
+            Text(subtitle, style: theme.textTheme.bodyMedium),
             const SizedBox(height: Insets.lg),
             Wrap(
               spacing: Insets.xs,
@@ -71,10 +80,26 @@ class _SleepTimerSheet extends ConsumerWidget {
                   _Chip(
                     label: _label(d),
                     selected: timer.isActive &&
+                        timer.mode == SleepTimerMode.duration &&
                         remaining != null &&
                         _isClose(remaining, d),
                     onTap: () {
                       timer.start(d);
+                      Navigator.of(context).pop();
+                    },
+                  ),
+                if (hasChapters)
+                  _Chip(
+                    label: 'End of chapter',
+                    selected: timer.isActive &&
+                        timer.mode == SleepTimerMode.endOfChapter,
+                    onTap: () {
+                      final idx = player.currentChapterIndex;
+                      if (idx == null) return;
+                      timer.startUntilEndOfChapter(
+                        idx,
+                        player.chapterIndexStream,
+                      );
                       Navigator.of(context).pop();
                     },
                   ),
@@ -134,16 +159,12 @@ class _Chip extends StatelessWidget {
         ),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(Radii.sm + 2),
-          color: selected
-              ? AppColors.accentSoft
-              : AppColors.fillTertiary,
+          color: selected ? AppColors.accentSoft : AppColors.fillTertiary,
         ),
         child: Text(
           label,
           style: theme.textTheme.titleSmall?.copyWith(
-            color: selected
-                ? AppColors.accent
-                : AppColors.textPrimary,
+            color: selected ? AppColors.accent : AppColors.textPrimary,
             fontWeight: FontWeight.w600,
           ),
         ),

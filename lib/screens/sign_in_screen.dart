@@ -105,11 +105,11 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                 onTap: () => Navigator.of(context).maybePop(),
                 child: Container(
                   padding: const EdgeInsets.all(8),
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     color: AppColors.fillTertiary,
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.close_rounded,
                     size: 20,
                     color: AppColors.textSecondary,
@@ -190,7 +190,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                       FilledButton(
                         onPressed: _busy ? null : _submit,
                         child: _busy
-                            ? const SizedBox(
+                            ? SizedBox(
                                 width: 18,
                                 height: 18,
                                 child: CircularProgressIndicator(

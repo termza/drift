@@ -1,24 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'accent_palette.dart';
 import 'app_colors.dart';
 import 'app_spacing.dart';
 
 class AppTheme {
   AppTheme._();
 
-  static ThemeData light() => _build(Brightness.dark);
-  static ThemeData dark() => _build(Brightness.dark);
+  /// Build a complete [ThemeData] for the given brightness + accent palette.
+  /// Applies the palette to the global [AppColors] before returning so widgets
+  /// that read those statics paint with the user's selection on next frame.
+  static ThemeData build({
+    required Brightness brightness,
+    required AccentPalette palette,
+  }) {
+    AppColors.apply(brightness: brightness, palette: palette);
 
-  static ThemeData _build(Brightness brightness) {
-    const bg = AppColors.bg;
-    const surface = AppColors.surface;
-    const surfaceElevated = AppColors.surfaceElevated;
-    const border = AppColors.border;
-    const borderSubtle = AppColors.borderSubtle;
-    const textPrimary = AppColors.textPrimary;
-    const textSecondary = AppColors.textSecondary;
-    const textTertiary = AppColors.textTertiary;
+    final bg = AppColors.bg;
+    final surface = AppColors.surface;
+    final surfaceElevated = AppColors.surfaceElevated;
+    final border = AppColors.border;
+    final borderSubtle = AppColors.borderSubtle;
+    final textPrimary = AppColors.textPrimary;
+    final textSecondary = AppColors.textSecondary;
+    final textTertiary = AppColors.textTertiary;
 
     // Apple-Music-like type scale. SF Pro substitute: Inter, with the
     // heavier weights doing the hierarchy work. Sentence case, no all-caps.
@@ -135,8 +141,8 @@ class AppTheme {
       canvasColor: bg,
       textTheme: textTheme,
       primaryTextTheme: textTheme,
-      iconTheme: const IconThemeData(color: textPrimary, size: 22),
-      dividerTheme: const DividerThemeData(
+      iconTheme: IconThemeData(color: textPrimary, size: 22),
+      dividerTheme: DividerThemeData(
         color: border,
         thickness: 0.5,
         space: 0,
@@ -147,7 +153,7 @@ class AppTheme {
         scrolledUnderElevation: 0,
         centerTitle: false,
         titleTextStyle: textTheme.titleLarge,
-        iconTheme: const IconThemeData(color: textPrimary),
+        iconTheme: IconThemeData(color: textPrimary),
       ),
       cardTheme: CardThemeData(
         color: surface,
@@ -220,7 +226,7 @@ class AppTheme {
           horizontal: Insets.md,
           vertical: 12,
         ),
-        hintStyle: const TextStyle(
+        hintStyle: TextStyle(
           color: textTertiary,
           fontSize: 15,
           fontWeight: FontWeight.w400,
@@ -242,7 +248,7 @@ class AppTheme {
       snackBarTheme: SnackBarThemeData(
         backgroundColor: textPrimary.withValues(alpha: 0.92),
         contentTextStyle: textTheme.bodyMedium?.copyWith(
-          color: Colors.white,
+          color: brightness == Brightness.dark ? Colors.black : Colors.white,
         ),
         behavior: SnackBarBehavior.floating,
         elevation: 0,
@@ -263,19 +269,21 @@ class AppTheme {
           color: textPrimary,
           borderRadius: BorderRadius.circular(Radii.sm),
         ),
-        textStyle: textTheme.bodySmall?.copyWith(color: Colors.white),
+        textStyle: textTheme.bodySmall?.copyWith(
+          color: brightness == Brightness.dark ? Colors.black : Colors.white,
+        ),
         padding: const EdgeInsets.symmetric(
           horizontal: Insets.sm,
           vertical: 6,
         ),
       ),
-      bottomSheetTheme: const BottomSheetThemeData(
+      bottomSheetTheme: BottomSheetThemeData(
         backgroundColor: surface,
         surfaceTintColor: Colors.transparent,
         modalBackgroundColor: surface,
-        modalBarrierColor: Color(0x66000000),
+        modalBarrierColor: const Color(0x66000000),
         elevation: 0,
-        shape: RoundedRectangleBorder(
+        shape: const RoundedRectangleBorder(
           borderRadius:
               BorderRadius.vertical(top: Radius.circular(Radii.lg)),
         ),
@@ -292,4 +300,13 @@ class AppTheme {
       splashFactory: NoSplash.splashFactory,
     );
   }
+
+  /// Back-compat: old code paths called `AppTheme.dark()`. Default to copper.
+  static ThemeData dark() => build(
+        brightness: Brightness.dark,
+        palette: AccentPalette.from(
+          const Color(0xFFE5A06B),
+          Brightness.dark,
+        ),
+      );
 }

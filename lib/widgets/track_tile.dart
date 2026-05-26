@@ -71,7 +71,7 @@ class TrackTile extends ConsumerWidget {
                       ),
                       if (isCurrent) ...[
                         const SizedBox(width: 6),
-                        const PlayingIndicator(
+                        PlayingIndicator(
                           playing: true,
                           color: AppColors.accent,
                           size: 12,

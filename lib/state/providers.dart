@@ -1,12 +1,18 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/bookmark.dart';
+import '../models/chapter.dart';
 import '../models/playback_state.dart';
 import '../models/track.dart';
+import '../services/appearance_prefs_service.dart';
 import '../services/audio_player_service.dart';
 import '../services/auth_repository.dart';
+import '../services/bookmark_service.dart';
+import '../services/chapter_service.dart';
 import '../services/database.dart';
 import '../services/favorites_service.dart';
 import '../services/library_service.dart';
+import '../services/playback_prefs_service.dart';
 import '../services/pocketbase_backend.dart';
 import '../services/progress_store.dart';
 import '../services/sleep_timer.dart';
@@ -20,8 +26,29 @@ final authRepositoryProvider = ChangeNotifierProvider<AuthRepository>((ref) {
   throw UnimplementedError('Override in main()');
 });
 
+final chapterServiceProvider = Provider<ChapterService>((ref) {
+  return ChapterService(ref.watch(databaseProvider));
+});
+
+final bookmarkServiceProvider = Provider<BookmarkService>((ref) {
+  return BookmarkService(ref.watch(databaseProvider));
+});
+
+final playbackPrefsServiceProvider =
+    ChangeNotifierProvider<PlaybackPrefsService>(
+  (ref) => throw UnimplementedError('Override in main()'),
+);
+
+final appearancePrefsServiceProvider =
+    ChangeNotifierProvider<AppearancePrefsService>(
+  (ref) => throw UnimplementedError('Override in main()'),
+);
+
 final libraryServiceProvider = Provider<LibraryService>((ref) {
-  return LibraryService(ref.watch(databaseProvider));
+  return LibraryService(
+    ref.watch(databaseProvider),
+    ref.watch(chapterServiceProvider),
+  );
 });
 
 final progressStoreProvider = Provider<ProgressStore>((ref) {
@@ -33,9 +60,29 @@ final favoritesServiceProvider = Provider<FavoritesService>((ref) {
 });
 
 final audioPlayerProvider = Provider<AudioPlayerService>((ref) {
-  final service = AudioPlayerService(ref.watch(progressStoreProvider));
+  // `read` for prefs — the service listens to the ChangeNotifier directly, so
+  // we don't want the provider to rebuild (and dispose the player) on changes.
+  final service = AudioPlayerService(
+    ref.watch(progressStoreProvider),
+    ref.watch(chapterServiceProvider),
+    ref.read(playbackPrefsServiceProvider),
+  );
   ref.onDispose(service.dispose);
   return service;
+});
+
+final bookmarksForTrackProvider =
+    FutureProvider.family<List<Bookmark>, String>((ref, trackId) async {
+  return ref.watch(bookmarkServiceProvider).listForTrack(trackId);
+});
+
+final chaptersForTrackProvider =
+    FutureProvider.family<List<Chapter>, String>((ref, trackId) async {
+  return ref.watch(chapterServiceProvider).listForTrack(trackId);
+});
+
+final currentChapterIndexProvider = StreamProvider<int?>((ref) {
+  return ref.watch(audioPlayerProvider).chapterIndexStream;
 });
 
 final sleepTimerProvider = ChangeNotifierProvider<SleepTimer>((ref) {

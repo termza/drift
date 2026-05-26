@@ -25,7 +25,7 @@ class AppDatabase {
     final db = await databaseFactory.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 2,
+        version: 3,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       ),
@@ -53,6 +53,8 @@ class AppDatabase {
         position_ms INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
         completed INTEGER NOT NULL DEFAULT 0,
+        current_chapter INTEGER,
+        last_paused_at INTEGER,
         FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE
       )
     ''');
@@ -60,6 +62,8 @@ class AppDatabase {
     await db.execute('CREATE INDEX idx_tracks_added ON tracks(added_at DESC)');
 
     await _createFavorites(db);
+    await _createChapters(db);
+    await _createBookmarks(db);
   }
 
   static Future<void> _onUpgrade(
@@ -68,6 +72,12 @@ class AppDatabase {
     int to,
   ) async {
     if (from < 2) await _createFavorites(db);
+    if (from < 3) {
+      await _createChapters(db);
+      await _createBookmarks(db);
+      await db.execute('ALTER TABLE progress ADD COLUMN current_chapter INTEGER');
+      await db.execute('ALTER TABLE progress ADD COLUMN last_paused_at INTEGER');
+    }
   }
 
   static Future<void> _createFavorites(Database db) async {
@@ -80,6 +90,39 @@ class AppDatabase {
     ''');
     await db.execute(
       'CREATE INDEX idx_favorites_added ON favorites(added_at DESC)',
+    );
+  }
+
+  static Future<void> _createChapters(Database db) async {
+    await db.execute('''
+      CREATE TABLE chapters (
+        id TEXT PRIMARY KEY,
+        track_id TEXT NOT NULL,
+        idx INTEGER NOT NULL,
+        title TEXT,
+        start_ms INTEGER NOT NULL,
+        end_ms INTEGER NOT NULL,
+        FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX idx_chapters_track ON chapters(track_id, idx)',
+    );
+  }
+
+  static Future<void> _createBookmarks(Database db) async {
+    await db.execute('''
+      CREATE TABLE bookmarks (
+        id TEXT PRIMARY KEY,
+        track_id TEXT NOT NULL,
+        position_ms INTEGER NOT NULL,
+        note TEXT,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX idx_bookmarks_track ON bookmarks(track_id, position_ms)',
     );
   }
 }

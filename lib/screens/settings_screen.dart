@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../services/appearance_prefs_service.dart';
+import '../services/playback_prefs_service.dart';
 import '../state/providers.dart';
+import '../theme/accent_palette.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import 'sign_in_screen.dart';
@@ -15,6 +18,11 @@ class SettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final auth = ref.watch(authRepositoryProvider);
+    final prefsService = ref.watch(playbackPrefsServiceProvider);
+    final prefs = prefsService.current;
+    final appearanceService = ref.watch(appearancePrefsServiceProvider);
+    final appearance = appearanceService.current;
+    final accentPreset = accentPresetByKey(appearance.accentKey);
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -34,8 +42,8 @@ class SettingsScreen extends ConsumerWidget {
                     InkResponse(
                       radius: 22,
                       onTap: () => Navigator.of(context).maybePop(),
-                      child: const Padding(
-                        padding: EdgeInsets.all(Insets.xs),
+                      child: Padding(
+                        padding: const EdgeInsets.all(Insets.xs),
                         child: Icon(
                           Icons.chevron_left_rounded,
                           size: 26,
@@ -66,7 +74,7 @@ class SettingsScreen extends ConsumerWidget {
                       subtitle: 'Pull latest from server',
                       onTap: () =>
                           ref.read(syncServiceProvider).reconcile(),
-                      trailing: const Icon(
+                      trailing: Icon(
                         Icons.chevron_right_rounded,
                         color: AppColors.textTertiary,
                         size: 22,
@@ -91,7 +99,7 @@ class SettingsScreen extends ConsumerWidget {
                           fullscreenDialog: true,
                         ),
                       ),
-                      trailing: const Icon(
+                      trailing: Icon(
                         Icons.chevron_right_rounded,
                         color: AppColors.textTertiary,
                         size: 22,
@@ -101,22 +109,74 @@ class SettingsScreen extends ConsumerWidget {
               ),
             ),
             const SliverToBoxAdapter(
-              child: _GroupHeader(text: 'PLAYBACK'),
+              child: _GroupHeader(text: 'APPEARANCE'),
+            ),
+            SliverToBoxAdapter(
+              child: _Group(
+                children: [
+                  _Row(
+                    icon: Icons.brightness_6_outlined,
+                    iconColor: AppColors.textPrimary,
+                    title: 'Theme',
+                    trailing: _ValueText(_themeLabel(appearance.themeMode)),
+                    onTap: () => _showThemeModeSheet(context, appearanceService),
+                  ),
+                  _Row(
+                    icon: Icons.palette_outlined,
+                    iconColor: AppColors.textPrimary,
+                    title: 'Accent color',
+                    trailing: _AccentSwatch(color: accentPreset.color),
+                    onTap: () => _showAccentSheet(context, appearanceService),
+                  ),
+                ],
+              ),
             ),
             const SliverToBoxAdapter(
+              child: _GroupHeader(text: 'PLAYBACK'),
+            ),
+            SliverToBoxAdapter(
               child: _Group(
                 children: [
                   _Row(
                     icon: Icons.replay_10_rounded,
                     iconColor: AppColors.textPrimary,
                     title: 'Skip back',
-                    trailing: _ValueText('15 sec'),
+                    trailing: _ValueText('${prefs.skipBackSeconds} sec'),
+                    onTap: () => _pickSeconds(
+                      context,
+                      title: 'Skip back',
+                      current: prefs.skipBackSeconds,
+                      options: const [5, 10, 15, 20, 30, 45, 60],
+                      onPick: prefsService.setSkipBack,
+                    ),
                   ),
                   _Row(
                     icon: Icons.forward_30_rounded,
                     iconColor: AppColors.textPrimary,
                     title: 'Skip forward',
-                    trailing: _ValueText('30 sec'),
+                    trailing: _ValueText('${prefs.skipForwardSeconds} sec'),
+                    onTap: () => _pickSeconds(
+                      context,
+                      title: 'Skip forward',
+                      current: prefs.skipForwardSeconds,
+                      options: const [10, 15, 30, 45, 60, 90, 120],
+                      onPick: prefsService.setSkipForward,
+                    ),
+                  ),
+                  _Row(
+                    icon: Icons.history_rounded,
+                    iconColor: AppColors.textPrimary,
+                    title: 'Auto-rewind on resume',
+                    subtitle: prefs.autoRewindThresholdMinutes == 0
+                        ? 'Off'
+                        : 'After ${prefs.autoRewindThresholdMinutes} min · '
+                            '${prefs.autoRewindSeconds} sec back',
+                    onTap: () => _showAutoRewindSheet(context, prefsService),
+                    trailing: Icon(
+                      Icons.chevron_right_rounded,
+                      color: AppColors.textTertiary,
+                      size: 22,
+                    ),
                   ),
                 ],
               ),
@@ -124,20 +184,343 @@ class SettingsScreen extends ConsumerWidget {
             const SliverToBoxAdapter(
               child: _GroupHeader(text: 'ABOUT'),
             ),
-            const SliverToBoxAdapter(
+            SliverToBoxAdapter(
               child: _Group(
                 children: [
                   _Row(
                     icon: Icons.info_outline_rounded,
                     iconColor: AppColors.textPrimary,
                     title: 'Drift',
-                    trailing: _ValueText('0.1.0'),
+                    trailing: const _ValueText('0.1.0'),
                   ),
                 ],
               ),
             ),
             const SliverToBoxAdapter(child: SizedBox(height: Insets.xxxl)),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+String _themeLabel(ThemeMode m) => switch (m) {
+      ThemeMode.system => 'System',
+      ThemeMode.light => 'Light',
+      ThemeMode.dark => 'Dark',
+    };
+
+Future<void> _showThemeModeSheet(
+  BuildContext context,
+  AppearancePrefsService service,
+) {
+  return showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: AppColors.bg,
+    builder: (ctx) => AnimatedBuilder(
+      animation: service,
+      builder: (_, __) {
+        final current = service.current.themeMode;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              Insets.gutter,
+              Insets.md,
+              Insets.gutter,
+              Insets.xl,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('Theme', style: Theme.of(ctx).textTheme.headlineLarge),
+                const SizedBox(height: Insets.md),
+                for (final m in ThemeMode.values)
+                  InkWell(
+                    onTap: () async {
+                      await service.setThemeMode(m);
+                      if (ctx.mounted) Navigator.of(ctx).pop();
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      child: Row(
+                        children: [
+                          Icon(
+                            switch (m) {
+                              ThemeMode.system => Icons.brightness_auto_outlined,
+                              ThemeMode.light => Icons.light_mode_outlined,
+                              ThemeMode.dark => Icons.dark_mode_outlined,
+                            },
+                            size: 22,
+                            color: m == current
+                                ? AppColors.accent
+                                : AppColors.textPrimary,
+                          ),
+                          const SizedBox(width: Insets.md),
+                          Expanded(
+                            child: Text(
+                              _themeLabel(m),
+                              style: Theme.of(ctx)
+                                  .textTheme
+                                  .titleSmall
+                                  ?.copyWith(
+                                    color: m == current
+                                        ? AppColors.accent
+                                        : AppColors.textPrimary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                            ),
+                          ),
+                          if (m == current)
+                            Icon(
+                              Icons.check_rounded,
+                              size: 20,
+                              color: AppColors.accent,
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    ),
+  );
+}
+
+Future<void> _showAccentSheet(
+  BuildContext context,
+  AppearancePrefsService service,
+) {
+  return showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: AppColors.bg,
+    isScrollControlled: true,
+    builder: (ctx) => AnimatedBuilder(
+      animation: service,
+      builder: (_, __) {
+        final currentKey = service.current.accentKey;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              Insets.gutter,
+              Insets.md,
+              Insets.gutter,
+              Insets.xl,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Accent color',
+                  style: Theme.of(ctx).textTheme.headlineLarge,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Used throughout Drift for highlights, buttons, and active states.',
+                  style: Theme.of(ctx).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: Insets.lg),
+                Wrap(
+                  spacing: 14,
+                  runSpacing: 14,
+                  children: [
+                    for (final p in kAccentPresets)
+                      _AccentChoice(
+                        preset: p,
+                        selected: p.key == currentKey,
+                        onTap: () => service.setAccentKey(p.key),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: Insets.lg),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('Done'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    ),
+  );
+}
+
+Future<void> _pickSeconds(
+  BuildContext context, {
+  required String title,
+  required int current,
+  required List<int> options,
+  required Future<void> Function(int) onPick,
+}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: AppColors.bg,
+    builder: (ctx) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          Insets.gutter,
+          Insets.md,
+          Insets.gutter,
+          Insets.xl,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(title, style: Theme.of(ctx).textTheme.headlineLarge),
+            const SizedBox(height: Insets.md),
+            Wrap(
+              spacing: Insets.xs,
+              runSpacing: Insets.xs,
+              children: [
+                for (final s in options)
+                  _PickChip(
+                    label: '$s sec',
+                    selected: s == current,
+                    onTap: () async {
+                      await onPick(s);
+                      if (ctx.mounted) Navigator.of(ctx).pop();
+                    },
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+Future<void> _showAutoRewindSheet(
+  BuildContext context,
+  PlaybackPrefsService service,
+) {
+  return showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: AppColors.bg,
+    isScrollControlled: true,
+    builder: (ctx) {
+      // Listen so chips update live as we tap.
+      return AnimatedBuilder(
+        animation: service,
+        builder: (_, __) {
+          final p = service.current;
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                Insets.gutter,
+                Insets.md,
+                Insets.gutter,
+                Insets.xl,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Auto-rewind on resume',
+                    style: Theme.of(ctx).textTheme.headlineLarge,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Skip back a few seconds when you come back after a break.',
+                    style: Theme.of(ctx).textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: Insets.lg),
+                  Text(
+                    'PAUSE THRESHOLD',
+                    style: Theme.of(ctx).textTheme.labelSmall?.copyWith(
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.5,
+                        ),
+                  ),
+                  const SizedBox(height: Insets.xs),
+                  Wrap(
+                    spacing: Insets.xs,
+                    runSpacing: Insets.xs,
+                    children: [
+                      for (final m in const [0, 1, 5, 15, 30])
+                        _PickChip(
+                          label: m == 0 ? 'Off' : '$m min',
+                          selected: m == p.autoRewindThresholdMinutes,
+                          onTap: () => service.setAutoRewindThreshold(m),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: Insets.lg),
+                  Text(
+                    'REWIND AMOUNT',
+                    style: Theme.of(ctx).textTheme.labelSmall?.copyWith(
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.5,
+                        ),
+                  ),
+                  const SizedBox(height: Insets.xs),
+                  Opacity(
+                    opacity: p.autoRewindThresholdMinutes == 0 ? 0.5 : 1.0,
+                    child: Wrap(
+                      spacing: Insets.xs,
+                      runSpacing: Insets.xs,
+                      children: [
+                        for (final s in const [5, 10, 15, 20, 30])
+                          _PickChip(
+                            label: '$s sec',
+                            selected: s == p.autoRewindSeconds,
+                            onTap: p.autoRewindThresholdMinutes == 0
+                                ? null
+                                : () => service.setAutoRewindSeconds(s),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    },
+  );
+}
+
+class _PickChip extends StatelessWidget {
+  const _PickChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+  final String label;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(Radii.sm + 2),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(Radii.sm + 2),
+          color: selected ? AppColors.accentSoft : AppColors.fillTertiary,
+        ),
+        child: Text(
+          label,
+          style: theme.textTheme.titleSmall?.copyWith(
+            color: selected ? AppColors.accent : AppColors.textPrimary,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
     );
@@ -189,8 +572,8 @@ class _Group extends StatelessWidget {
             for (var i = 0; i < children.length; i++) ...[
               children[i],
               if (i < children.length - 1)
-                const Padding(
-                  padding: EdgeInsets.only(left: 52),
+                Padding(
+                  padding: const EdgeInsets.only(left: 52),
                   child: Divider(
                     height: 0.5,
                     color: AppColors.borderSubtle,
@@ -281,6 +664,75 @@ class _ValueText extends StatelessWidget {
       style: Theme.of(context).textTheme.bodySmall?.copyWith(
             color: AppColors.textSecondary,
           ),
+    );
+  }
+}
+
+class _AccentSwatch extends StatelessWidget {
+  const _AccentSwatch({required this.color});
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 22,
+      height: 22,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: AppColors.border,
+          width: 0.5,
+        ),
+      ),
+    );
+  }
+}
+
+class _AccentChoice extends StatelessWidget {
+  const _AccentChoice({
+    required this.preset,
+    required this.selected,
+    required this.onTap,
+  });
+  final AccentPreset preset;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: preset.name,
+      child: InkResponse(
+        onTap: onTap,
+        radius: 28,
+        child: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: preset.color,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: selected ? AppColors.textPrimary : Colors.transparent,
+              width: 2.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: preset.color.withValues(alpha: 0.35),
+                blurRadius: selected ? 14 : 0,
+                spreadRadius: selected ? -2 : 0,
+              ),
+            ],
+          ),
+          child: selected
+              ? Icon(
+                  Icons.check_rounded,
+                  size: 20,
+                  color: AppColors.accentInk,
+                )
+              : null,
+        ),
+      ),
     );
   }
 }

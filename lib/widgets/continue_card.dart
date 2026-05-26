@@ -93,7 +93,7 @@ class ContinueCard extends StatelessWidget {
                           value: fraction.clamp(0.0, 1.0),
                           minHeight: 3,
                           backgroundColor: AppColors.fillSecondary,
-                          valueColor: const AlwaysStoppedAnimation(
+                          valueColor: AlwaysStoppedAnimation(
                             AppColors.accent,
                           ),
                         ),
@@ -105,11 +105,11 @@ class ContinueCard extends StatelessWidget {
                 Container(
                   width: 44,
                   height: 44,
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     color: AppColors.accent,
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.play_arrow_rounded,
                     size: 26,
                     color: AppColors.accentInk,

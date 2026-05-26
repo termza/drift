@@ -27,7 +27,7 @@ class Sidebar extends ConsumerWidget {
 
     return Container(
       width: compact ? 76 : 232,
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.surface,
         border: Border(
           right: BorderSide(color: AppColors.borderSubtle, width: 0.5),
@@ -133,7 +133,7 @@ class _SettingsItem extends StatelessWidget {
                 ? MainAxisAlignment.center
                 : MainAxisAlignment.start,
             children: [
-              const Icon(
+              Icon(
                 Icons.settings_outlined,
                 size: 22,
                 color: AppColors.textSecondary,
