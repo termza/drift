@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/track.dart';
+import '../services/track_sync_service.dart';
 import '../state/providers.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
@@ -24,6 +25,8 @@ class CloudStatusScreen extends ConsumerWidget {
           data: (v) => v,
           orElse: () => 0,
         );
+    final sync = ref.watch(trackSyncServiceProvider);
+    final failures = sync.recentFailures;
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -65,12 +68,25 @@ class CloudStatusScreen extends ConsumerWidget {
                   email: auth.userEmail,
                   onSync: auth.isSignedIn
                       ? () async {
-                          final sync = ref.read(trackSyncServiceProvider);
+                          final s = ref.read(trackSyncServiceProvider);
                           await ref.read(syncServiceProvider).reconcile();
-                          await sync.pullCatalog();
-                          await sync.syncAllLocal();
+                          await s.pullCatalog();
+                          await s.syncAllLocal();
                           ref.invalidate(libraryProvider);
                           ref.invalidate(cacheSizeProvider);
+                          if (context.mounted) {
+                            final up = s.lastSyncUploaded;
+                            final fail = s.lastSyncFailed;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  up == 0 && fail == 0
+                                      ? 'Already in sync.'
+                                      : 'Uploaded $up · Failed $fail',
+                                ),
+                              ),
+                            );
+                          }
                         }
                       : null,
                 ),
@@ -142,6 +158,34 @@ class CloudStatusScreen extends ConsumerWidget {
               },
               orElse: () => const SliverToBoxAdapter(child: SizedBox.shrink()),
             ),
+            if (failures.isNotEmpty) ...[
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    Insets.gutter,
+                    Insets.xl,
+                    Insets.gutter,
+                    Insets.sm,
+                  ),
+                  child: Text(
+                    'RECENT SYNC FAILURES',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: AppColors.danger,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                ),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: Insets.gutter),
+                sliver: SliverList.separated(
+                  itemCount: failures.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 6),
+                  itemBuilder: (_, i) => _FailureTile(failure: failures[i]),
+                ),
+              ),
+            ],
             const SliverToBoxAdapter(child: SizedBox(height: 100)),
           ],
         ),
@@ -327,6 +371,48 @@ class _StatTile extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _FailureTile extends StatelessWidget {
+  const _FailureTile({required this.failure});
+  final SyncFailure failure;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.danger.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(Radii.sm + 2),
+        border: Border.all(
+          color: AppColors.danger.withValues(alpha: 0.25),
+          width: 0.5,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            failure.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          SelectableText(
+            failure.reason,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: AppColors.danger,
+            ),
+          ),
+        ],
       ),
     );
   }

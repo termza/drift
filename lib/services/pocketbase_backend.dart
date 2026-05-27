@@ -120,9 +120,15 @@ class PocketBaseBackend implements SyncBackend {
   }
 
   static String _pbDate(DateTime dt) {
-    // PocketBase expects 'YYYY-MM-DD HH:mm:ss.SSSZ' with space separator.
-    final s = dt.toUtc().toIso8601String();
-    return s.replaceFirst('T', ' ');
+    // PocketBase 0.22+ strictly expects 'YYYY-MM-DD HH:mm:ss.SSSZ' with
+    // *exactly* three fractional digits. Dart's toIso8601String emits up to
+    // six (microseconds), which PocketBase rejects with HTTP 400 and a
+    // useless error body, so the periodic sync silently stops working.
+    final u = dt.toUtc();
+    String two(int v) => v.toString().padLeft(2, '0');
+    String three(int v) => v.toString().padLeft(3, '0');
+    return '${u.year.toString().padLeft(4, '0')}-${two(u.month)}-${two(u.day)} '
+        '${two(u.hour)}:${two(u.minute)}:${two(u.second)}.${three(u.millisecond)}Z';
   }
 
   static DateTime _parseUpdated(RecordModel r) {

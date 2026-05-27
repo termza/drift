@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+// ignore: implementation_imports — ClientException is exported via package root
 import 'package:pocketbase/pocketbase.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -30,6 +31,34 @@ class TrackSyncService extends ChangeNotifier {
   /// Read by the per-tile sync bar; entries are cleared on completion.
   final Map<String, double> _progressByTrack = {};
   double? progressFor(String trackId) => _progressByTrack[trackId];
+
+  /// Most recent per-track sync failures (newest first). Surfaced in the
+  /// Cloud Status screen so silent server-side errors stop being invisible.
+  final List<SyncFailure> _recentFailures = [];
+  List<SyncFailure> get recentFailures => List.unmodifiable(_recentFailures);
+  static const _maxFailures = 20;
+
+  void _recordFailure(String trackId, String title, String reason) {
+    _recentFailures.insert(
+      0,
+      SyncFailure(
+        trackId: trackId,
+        title: title,
+        reason: reason,
+        at: DateTime.now(),
+      ),
+    );
+    while (_recentFailures.length > _maxFailures) {
+      _recentFailures.removeLast();
+    }
+    notifyListeners();
+  }
+
+  /// Summary of the last bulk-sync run, for the "Sync now" snackbar.
+  int _lastSyncUploaded = 0;
+  int _lastSyncFailed = 0;
+  int get lastSyncUploaded => _lastSyncUploaded;
+  int get lastSyncFailed => _lastSyncFailed;
 
   PocketBase get _pb => _auth.pb;
   bool get _signedIn => _auth.isSignedIn;
@@ -169,7 +198,12 @@ class TrackSyncService extends ChangeNotifier {
         where: 'id = ?',
         whereArgs: [track.id],
       );
-    } catch (_) {
+      notifyListeners();
+    } catch (e) {
+      final reason = e is ClientException
+          ? 'HTTP ${e.statusCode}: ${e.response['message'] ?? e.toString()}'
+          : e.toString();
+      _recordFailure(track.id, track.title, reason);
       await _setState(track.id, TrackCloudState.failed);
     }
   }
@@ -324,24 +358,60 @@ class TrackSyncService extends ChangeNotifier {
   }
 
   /// Walk the local tracks table and push anything that's still
-  /// [TrackCloudState.localOnly] up to the server. Existing tracks that
-  /// pre-date the user signing in get caught here.
+  /// [TrackCloudState.localOnly] up to the server. Records counts so the
+  /// "Sync now" snackbar can report progress.
   Future<void> syncAllLocal() async {
-    if (!_signedIn) return;
+    if (!_signedIn) {
+      _lastSyncUploaded = 0;
+      _lastSyncFailed = 0;
+      return;
+    }
     final rows = await _db.db.query(
       'tracks',
       where: 'cloud_state = ? OR cloud_state IS NULL',
       whereArgs: [TrackCloudState.localOnly.name],
     );
+    var uploaded = 0;
+    var failed = 0;
     for (final row in rows) {
       final t = Track.fromRow(row);
       if (!t.isLocal) continue;
+      final before = _recentFailures.length;
       await uploadIfLocal(t);
+      // Refresh from DB to see the resulting state.
+      final after = await _db.db
+          .query('tracks', where: 'id = ?', whereArgs: [t.id], limit: 1);
+      if (after.isNotEmpty) {
+        final state = (after.first['cloud_state'] as String?) ?? '';
+        if (state == TrackCloudState.uploaded.name) {
+          uploaded++;
+        } else if (_recentFailures.length > before) {
+          failed++;
+        }
+      }
     }
+    _lastSyncUploaded = uploaded;
+    _lastSyncFailed = failed;
+    notifyListeners();
   }
 
   /// Total bytes currently held in the synced-tracks cache directory. Cheap
   /// non-recursive scan — synced files are flat under one directory.
+  /// How many local tracks haven't been pushed up yet. Drives the UI hint
+  /// "12 tracks pending sync".
+  Future<int> pendingUploadCount() async {
+    final rows = await _db.db.query(
+      'tracks',
+      where:
+          'file_path != "" AND (cloud_state = ? OR cloud_state IS NULL OR cloud_state = ?)',
+      whereArgs: [
+        TrackCloudState.localOnly.name,
+        TrackCloudState.failed.name,
+      ],
+    );
+    return rows.length;
+  }
+
   Future<int> cacheSizeBytes() async {
     try {
       final dir = await getApplicationSupportDirectory();
@@ -357,4 +427,18 @@ class TrackSyncService extends ChangeNotifier {
       return 0;
     }
   }
+}
+
+/// One historical sync failure, surfaced in the Cloud Status screen.
+class SyncFailure {
+  const SyncFailure({
+    required this.trackId,
+    required this.title,
+    required this.reason,
+    required this.at,
+  });
+  final String trackId;
+  final String title;
+  final String reason;
+  final DateTime at;
 }
