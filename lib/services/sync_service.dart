@@ -54,6 +54,11 @@ class SyncService {
 
   /// Pull remote, merge with local using last-write-wins, push anything the
   /// remote didn't already have or that we updated more recently.
+  ///
+  /// Network errors are swallowed — sync is best-effort and must never crash
+  /// the app. The most common failure mode (and the one this used to throw
+  /// uncaught on) is "embedded server not up yet" which fixes itself on the
+  /// next periodic tick.
   Future<void> reconcile() async {
     if (!isSignedIn || _running) return;
     _running = true;
@@ -81,6 +86,8 @@ class SyncService {
         }
       }
       if (toPush.isNotEmpty) await _backend.push(toPush);
+    } catch (_) {
+      // Best-effort: connection refused / 4xx / etc. all get retried next tick.
     } finally {
       _running = false;
     }

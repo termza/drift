@@ -57,6 +57,7 @@ final embeddedServerServiceProvider =
   final svc = EmbeddedServerService(
     ref.watch(serverPrefsServiceProvider),
     ref.watch(authRepositoryProvider),
+    ref.watch(trackSyncServiceProvider),
   );
   ref.onDispose(svc.dispose);
   return svc;

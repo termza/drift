@@ -54,6 +54,10 @@ class _RootShellState extends ConsumerState<RootShell>
   @override
   Widget build(BuildContext context) {
     ref.listen(authRepositoryProvider, (_, __) => _bootSync());
+    // Eagerly instantiate the embedded sync server so it actually starts on
+    // app boot — without this watch, the provider stays lazy and the server
+    // only spins up when the user happens to open Settings → Sync Server.
+    ref.watch(embeddedServerServiceProvider);
     final section = ref.watch(currentSectionProvider);
 
     return LayoutBuilder(

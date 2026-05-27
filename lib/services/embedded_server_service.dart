@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/server_prefs.dart';
 import 'auth_repository.dart';
 import 'server_prefs_service.dart';
+import 'track_sync_service.dart';
 
 /// What the embedded sync server is currently doing.
 enum EmbeddedServerStatus {
@@ -48,13 +49,14 @@ enum EmbeddedServerStatus {
 /// The service exposes itself as a [ChangeNotifier]; the Settings UI watches
 /// it for live status updates.
 class EmbeddedServerService extends ChangeNotifier {
-  EmbeddedServerService(this._prefs, this._auth) {
+  EmbeddedServerService(this._prefs, this._auth, this._trackSync) {
     _prefs.addListener(_onPrefsChanged);
     _maybeReact();
   }
 
   final ServerPrefsService _prefs;
   final AuthRepository _auth;
+  final TrackSyncService _trackSync;
   Process? _process;
   EmbeddedServerStatus _status = EmbeddedServerStatus.off;
   String? _errorMessage;
@@ -214,6 +216,23 @@ class EmbeddedServerService extends ChangeNotifier {
     }
 
     _set(EmbeddedServerStatus.running);
+    _appendLog('Embedded sync server running at $localUrl (LAN: $_lanIp)');
+
+    // Step 8 — push anything in the local library that hasn't made it to
+    // the server yet. Fire-and-forget so the status flip isn't blocked by
+    // potentially large uploads.
+    unawaited(() async {
+      try {
+        await _trackSync.syncAllLocal();
+        _appendLog(
+          'Initial sync swept up '
+          '${_trackSync.lastSyncUploaded} uploads, '
+          '${_trackSync.lastSyncFailed} failed.',
+        );
+      } catch (e) {
+        _appendLog('Initial sync failed: $e');
+      }
+    }());
   }
 
   Future<void> _stop() async {
