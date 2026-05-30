@@ -69,20 +69,18 @@ class CloudStatusScreen extends ConsumerWidget {
                   onSync: auth.isSignedIn
                       ? () async {
                           final s = ref.read(trackSyncServiceProvider);
-                          await ref.read(syncServiceProvider).reconcile();
                           await s.pullCatalog();
-                          await s.syncAllLocal();
                           ref.invalidate(libraryProvider);
                           ref.invalidate(cacheSizeProvider);
                           if (context.mounted) {
-                            final up = s.lastSyncUploaded;
-                            final fail = s.lastSyncFailed;
+                            final seen = s.lastSyncSeen;
+                            final added = s.lastSyncAdded;
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text(
-                                  up == 0 && fail == 0
-                                      ? 'Already in sync.'
-                                      : 'Uploaded $up · Failed $fail',
+                                  added == 0
+                                      ? 'In sync — $seen tracks on server.'
+                                      : 'Found $added new track${added == 1 ? "" : "s"} (server has $seen).',
                                 ),
                               ),
                             );

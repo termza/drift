@@ -1,77 +1,89 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
-import 'package:pocketbase/pocketbase.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../utils/server_url.dart';
+import 'media_server_client.dart';
 
-/// Holds the PocketBase client + persisted auth.
+/// Tracks the user's connection to a Drift Media Server: server URL +
+/// bearer token. Persisted across launches via [SharedPreferences].
 ///
-/// The server URL and auth token are saved in [SharedPreferences] so the user
-/// stays signed in across launches. Listeners are notified whenever auth or
-/// the server URL changes so the UI (and sync service) can react.
+/// This used to wrap PocketBase. The Docker media server uses a single
+/// shared-password auth scheme, so the email is purely cosmetic here.
 class AuthRepository extends ChangeNotifier {
-  AuthRepository._(this._prefs, this._pb);
+  AuthRepository._(this._prefs, this._serverUrl, this._token);
 
   static const _kServerUrl = 'sync.server_url';
-  static const _kAuthPayload = 'sync.auth_payload';
+  static const _kAuthToken = 'sync.auth_token';
   static const _kRecentServers = 'sync.recent_servers';
   static const _maxRecents = 5;
 
-  /// Default server during development. Override in the sign-in screen.
+  /// Default server URL shown to the user on a fresh install — points at
+  /// the local Drift Media Server's default port.
   static const _defaultUrl = 'http://127.0.0.1:8090';
 
   final SharedPreferences _prefs;
-  PocketBase _pb;
+  String _serverUrl;
+  String? _token;
 
   static Future<AuthRepository> init() async {
     final prefs = await SharedPreferences.getInstance();
     final url = prefs.getString(_kServerUrl) ?? _defaultUrl;
-
-    final authStore = AsyncAuthStore(
-      save: (data) async => prefs.setString(_kAuthPayload, data),
-      initial: prefs.getString(_kAuthPayload),
-    );
-
-    final pb = PocketBase(url, authStore: authStore);
-    final repo = AuthRepository._(prefs, pb);
-
-    // Refresh the cached auth in the background — if the server invalidated
-    // the token (password change, etc.) we'll cleanly fall back to signed-out.
-    if (pb.authStore.isValid) {
-      unawaited(repo._refresh());
-    }
-    return repo;
+    final token = prefs.getString(_kAuthToken);
+    return AuthRepository._(prefs, url, token);
   }
 
-  PocketBase get pb => _pb;
-  String get serverUrl => _pb.baseURL;
-  bool get isSignedIn => _pb.authStore.isValid;
-  String? get userId => _pb.authStore.record?.id;
-  String? get userEmail => _pb.authStore.record?.data['email'] as String?;
+  String get serverUrl => _serverUrl;
+  String? get token => _token;
+  bool get isSignedIn => _token != null && _serverUrl.isNotEmpty;
 
-  /// Accepts any of the shapes [normalizeServerUrl] supports: bare IP,
-  /// IP:port, hostname, full URL. Throws [ServerUrlError] for inputs that
-  /// can't be coerced into a valid origin.
+  /// Synthetic user identity — the media server doesn't have per-user
+  /// accounts, but the rest of the app expects these fields.
+  String? get userId => isSignedIn ? 'drift-local' : null;
+  String? get userEmail => isSignedIn ? 'drift@local' : null;
+
+  /// Build a fresh [MediaServerClient] for the current server + token.
+  MediaServerClient client() =>
+      MediaServerClient(serverUrl: _serverUrl, token: _token);
+
   Future<void> setServerUrl(String url) async {
     final normalized = normalizeServerUrl(url);
-    if (normalized.url == _pb.baseURL) return;
-
-    await _prefs.setString(_kServerUrl, normalized.url);
-    await _rememberServer(normalized.url);
-    // Tearing down and rebuilding is simpler than mutating the existing client.
-    final authStore = AsyncAuthStore(
-      save: (data) async => _prefs.setString(_kAuthPayload, data),
-      initial: _prefs.getString(_kAuthPayload),
-    );
-    _pb = PocketBase(normalized.url, authStore: authStore);
+    if (normalized.url == _serverUrl) return;
+    _serverUrl = normalized.url;
+    // Swapping servers invalidates the cached token — different server,
+    // probably different shared password.
+    _token = null;
+    await _prefs.setString(_kServerUrl, _serverUrl);
+    await _prefs.remove(_kAuthToken);
+    await _rememberServer(_serverUrl);
     notifyListeners();
   }
 
-  /// Recent server URLs (most-recent first), persisted across launches so the
-  /// user can hop between dev / home / remote without retyping.
+  /// Sign in with the media server's shared password. `email` is accepted
+  /// for UI compatibility but ignored on the wire.
+  Future<void> signIn(String _email, String password) async {
+    final token = await client().signIn(password);
+    _token = token;
+    await _prefs.setString(_kAuthToken, token);
+    notifyListeners();
+  }
+
+  Future<void> signOut() async {
+    _token = null;
+    await _prefs.remove(_kAuthToken);
+    notifyListeners();
+  }
+
+  /// Sign-up doesn't exist on a media server — there's just the one
+  /// shared password. Kept for UI compatibility; routes to [signIn].
+  Future<void> signUp({required String email, required String password}) =>
+      signIn(email, password);
+
+  // ---------------------------------------------------------------------------
+  // Recent servers
+  // ---------------------------------------------------------------------------
+
   List<String> get recentServers =>
       _prefs.getStringList(_kRecentServers) ?? const [];
 
@@ -91,76 +103,27 @@ class AuthRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Try to reach PocketBase's health endpoint without changing the saved
-  /// URL. Returns a friendly result the UI can render.
+  /// Probe `/api/health` without touching saved state. Lets the sign-in
+  /// screen offer a "Test connection" affordance.
   Future<ConnectionTest> testConnection(String url) async {
     final NormalizedServerUrl normalized;
     try {
       normalized = normalizeServerUrl(url);
     } on ServerUrlError catch (e) {
       return ConnectionTest(ok: false, message: e.message);
-    } catch (e) {
-      return ConnectionTest(ok: false, message: 'Invalid URL');
-    }
-
-    try {
-      final resp = await http
-          .get(Uri.parse('${normalized.url}/api/health'))
-          .timeout(const Duration(seconds: 5));
-      if (resp.statusCode == 200) {
-        return ConnectionTest(
-          ok: true,
-          message: 'Connected to ${normalized.display}',
-          normalizedUrl: normalized.url,
-        );
-      }
-      return ConnectionTest(
-        ok: false,
-        message: 'Server responded ${resp.statusCode}',
-      );
-    } on TimeoutException {
-      return ConnectionTest(
-        ok: false,
-        message: 'Timed out — check the host and port',
-      );
     } catch (_) {
-      return ConnectionTest(
-        ok: false,
-        message: "Couldn't reach the server",
-      );
+      return const ConnectionTest(ok: false, message: 'Invalid URL');
     }
-  }
 
-  Future<void> signIn(String email, String password) async {
-    await _pb.collection('users').authWithPassword(email, password);
-    notifyListeners();
-  }
-
-  Future<void> signUp({
-    required String email,
-    required String password,
-  }) async {
-    await _pb.collection('users').create(body: {
-      'email': email,
-      'password': password,
-      'passwordConfirm': password,
-    });
-    await signIn(email, password);
-  }
-
-  Future<void> signOut() async {
-    _pb.authStore.clear();
-    notifyListeners();
-  }
-
-  Future<void> _refresh() async {
-    try {
-      await _pb.collection('users').authRefresh();
-      notifyListeners();
-    } catch (_) {
-      _pb.authStore.clear();
-      notifyListeners();
-    }
+    final probe = MediaServerClient(serverUrl: normalized.url);
+    final ok = await probe.ping();
+    return ConnectionTest(
+      ok: ok,
+      message: ok
+          ? 'Reached ${normalized.display}'
+          : "Couldn't reach the server",
+      normalizedUrl: ok ? normalized.url : null,
+    );
   }
 }
 

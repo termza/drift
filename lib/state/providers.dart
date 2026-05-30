@@ -10,13 +10,10 @@ import '../services/auth_repository.dart';
 import '../services/bookmark_service.dart';
 import '../services/chapter_service.dart';
 import '../services/database.dart';
-import '../services/embedded_server_service.dart';
 import '../services/favorites_service.dart';
 import '../services/library_service.dart';
 import '../services/playback_prefs_service.dart';
-import '../services/pocketbase_backend.dart';
 import '../services/progress_store.dart';
-import '../services/server_prefs_service.dart';
 import '../services/sleep_timer.dart';
 import '../services/sync_service.dart';
 import '../services/track_sync_service.dart';
@@ -46,22 +43,6 @@ final appearancePrefsServiceProvider =
     ChangeNotifierProvider<AppearancePrefsService>(
   (ref) => throw UnimplementedError('Override in main()'),
 );
-
-final serverPrefsServiceProvider =
-    ChangeNotifierProvider<ServerPrefsService>(
-  (ref) => throw UnimplementedError('Override in main()'),
-);
-
-final embeddedServerServiceProvider =
-    ChangeNotifierProvider<EmbeddedServerService>((ref) {
-  final svc = EmbeddedServerService(
-    ref.watch(serverPrefsServiceProvider),
-    ref.watch(authRepositoryProvider),
-    ref.watch(trackSyncServiceProvider),
-  );
-  ref.onDispose(svc.dispose);
-  return svc;
-});
 
 final libraryServiceProvider = Provider<LibraryService>((ref) {
   return LibraryService(
@@ -122,11 +103,10 @@ final sleepTimerProvider = ChangeNotifierProvider<SleepTimer>((ref) {
 });
 
 final syncServiceProvider = Provider<SyncService>((ref) {
-  final auth = ref.watch(authRepositoryProvider);
   final store = ref.watch(progressStoreProvider);
-  final backend =
-      auth.isSignedIn ? PocketBaseBackend(auth) : OfflineBackend();
-  final service = SyncService(store, backend);
+  // Drift Media Server doesn't expose a progress endpoint yet, so wire up
+  // the offline (no-op) backend. Local resumes still work via ProgressStore.
+  final service = SyncService(store, OfflineBackend());
   ref.onDispose(service.dispose);
   return service;
 });

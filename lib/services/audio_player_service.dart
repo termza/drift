@@ -138,7 +138,13 @@ class AudioPlayerService {
       // hundred-MB audiobooks before play starts.
       final streamUri = await _sync.streamUrl(effective);
       if (streamUri != null) {
-        source = AudioSource.uri(streamUri, tag: tag);
+        // Pass the Bearer token via headers so the Drift Media Server
+        // accepts the stream request without an extra auth round-trip.
+        source = AudioSource.uri(
+          streamUri,
+          tag: tag,
+          headers: _sync.streamHeaders(),
+        );
       } else {
         // Streaming wasn't reachable — fall back to a full download.
         final localPath = await _sync.downloadFile(effective);

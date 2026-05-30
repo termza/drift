@@ -1,4 +1,4 @@
-import 'dart:ui';
+﻿import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/appearance_prefs_service.dart';
 import '../services/auth_repository.dart';
-import '../services/embedded_server_service.dart';
 import '../services/playback_prefs_service.dart';
 import '../state/providers.dart';
 import '../theme/accent_palette.dart';
@@ -18,7 +17,7 @@ import '../widgets/server_url_field.dart';
 import 'sign_in_screen.dart';
 
 /// iOS-style grouped settings list. White cards on the neutral background,
-/// rows with leading icon · title/subtitle · trailing element.
+/// rows with leading icon Â· title/subtitle Â· trailing element.
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key, this.embedded = false});
 
@@ -135,14 +134,6 @@ class SettingsScreen extends ConsumerWidget {
                 ],
               ),
             ),
-            if (EmbeddedServerService.supportedOnThisPlatform) ...[
-              const SliverToBoxAdapter(
-                child: _GroupHeader(text: 'SYNC SERVER ON THIS DEVICE'),
-              ),
-              SliverToBoxAdapter(
-                child: _EmbeddedServerCard(),
-              ),
-            ],
             const SliverToBoxAdapter(
               child: _GroupHeader(text: 'APPEARANCE'),
             ),
@@ -204,7 +195,7 @@ class SettingsScreen extends ConsumerWidget {
                     title: 'Auto-rewind on resume',
                     subtitle: prefs.autoRewindThresholdMinutes == 0
                         ? 'Off'
-                        : 'After ${prefs.autoRewindThresholdMinutes} min · '
+                        : 'After ${prefs.autoRewindThresholdMinutes} min Â· '
                             '${prefs.autoRewindSeconds} sec back',
                     onTap: () => _showAutoRewindSheet(context, prefsService),
                     trailing: Icon(
@@ -239,335 +230,12 @@ class SettingsScreen extends ConsumerWidget {
   }
 }
 
-class _EmbeddedServerCard extends ConsumerStatefulWidget {
-  @override
-  ConsumerState<_EmbeddedServerCard> createState() =>
-      _EmbeddedServerCardState();
-}
+// _EmbeddedServerCard + its support widgets used to live here. They drove
+// the in-app "Run PocketBase as a subprocess" toggle; the project pivoted
+// to a separate Docker container (`server-media/`), so the whole pile is
+// gone. Settings now only configures the server URL via _showServerSheet.
 
-class _EmbeddedServerCardState extends ConsumerState<_EmbeddedServerCard> {
-  final _passCtl = TextEditingController();
-  bool _obscure = true;
-  bool _passDirty = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _passCtl.text = ref.read(serverPrefsServiceProvider).current.syncPassword;
-  }
-
-  @override
-  void dispose() {
-    _passCtl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final prefsService = ref.watch(serverPrefsServiceProvider);
-    final server = ref.watch(embeddedServerServiceProvider);
-    final prefs = prefsService.current;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: Insets.gutter),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _Group(
-            children: [
-              _Row(
-                icon: Icons.dns_outlined,
-                iconColor: AppColors.accent,
-                title: 'Run sync server on this device',
-                subtitle: _statusSubtitle(server),
-                trailing: Switch(
-                  value: prefs.enabled,
-                  activeThumbColor: AppColors.accent,
-                  onChanged: (v) async {
-                    if (v && _passCtl.text.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Set a sync password first so other devices can connect.',
-                          ),
-                        ),
-                      );
-                      return;
-                    }
-                    if (v && _passDirty) {
-                      await prefsService
-                          .setSyncPassword(_passCtl.text);
-                      _passDirty = false;
-                    }
-                    await prefsService.setEnabled(v);
-                  },
-                ),
-              ),
-              _PasswordRow(
-                controller: _passCtl,
-                obscure: _obscure,
-                onToggleObscure: () =>
-                    setState(() => _obscure = !_obscure),
-                onChanged: (_) => setState(() => _passDirty = true),
-                onSave: () async {
-                  await prefsService.setSyncPassword(_passCtl.text);
-                  setState(() => _passDirty = false);
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Sync password saved')),
-                  );
-                },
-                dirty: _passDirty,
-              ),
-            ],
-          ),
-          if (server.status == EmbeddedServerStatus.running &&
-              server.lanUrl != null) ...[
-            const SizedBox(height: 10),
-            _ConnectInfo(
-              url: server.lanUrl!,
-              email: server.syncEmail,
-            ),
-          ],
-          if (server.status == EmbeddedServerStatus.failed &&
-              server.errorMessage != null) ...[
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.danger.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(Radii.sm + 2),
-                border: Border.all(
-                  color: AppColors.danger.withValues(alpha: 0.3),
-                  width: 0.5,
-                ),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    Icons.error_outline_rounded,
-                    size: 16,
-                    color: AppColors.danger,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      server.errorMessage!,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: AppColors.danger,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  String _statusSubtitle(EmbeddedServerService server) {
-    switch (server.status) {
-      case EmbeddedServerStatus.off:
-        return 'Off — other devices can\'t reach Drift';
-      case EmbeddedServerStatus.starting:
-        return 'Starting…';
-      case EmbeddedServerStatus.running:
-        final ip = server.lanIp;
-        return ip == null
-            ? 'Running on port ${server.port}'
-            : 'Running at $ip:${server.port}';
-      case EmbeddedServerStatus.failed:
-        return 'Failed — see message below';
-      case EmbeddedServerStatus.stopping:
-        return 'Stopping…';
-    }
-  }
-}
-
-class _PasswordRow extends StatelessWidget {
-  const _PasswordRow({
-    required this.controller,
-    required this.obscure,
-    required this.onToggleObscure,
-    required this.onChanged,
-    required this.onSave,
-    required this.dirty,
-  });
-  final TextEditingController controller;
-  final bool obscure;
-  final VoidCallback onToggleObscure;
-  final ValueChanged<String> onChanged;
-  final VoidCallback onSave;
-  final bool dirty;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return InkWell(
-      onTap: null,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(Insets.md, 12, Insets.md, 12),
-        child: Row(
-          children: [
-            Icon(Icons.key_outlined, size: 22, color: AppColors.textPrimary),
-            const SizedBox(width: Insets.md),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Sync password',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  TextField(
-                    controller: controller,
-                    obscureText: obscure,
-                    onChanged: onChanged,
-                    autocorrect: false,
-                    decoration: InputDecoration(
-                      isDense: true,
-                      hintText: 'Pick a strong password',
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          obscure
-                              ? Icons.visibility_outlined
-                              : Icons.visibility_off_outlined,
-                          size: 18,
-                          color: AppColors.textTertiary,
-                        ),
-                        onPressed: onToggleObscure,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            if (dirty)
-              TextButton(
-                onPressed: onSave,
-                child: const Text('Save'),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ConnectInfo extends StatelessWidget {
-  const _ConnectInfo({required this.url, required this.email});
-  final String url;
-  final String email;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.accent.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(Radii.md),
-        border: Border.all(
-          color: AppColors.accent.withValues(alpha: 0.25),
-          width: 0.5,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.qr_code_2_rounded,
-                size: 18,
-                color: AppColors.accent,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'CONNECT FROM OTHER DEVICES',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: AppColors.accent,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.0,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          _CopyRow(label: 'Server', value: url),
-          const SizedBox(height: 6),
-          _CopyRow(label: 'Email', value: email),
-          const SizedBox(height: 6),
-          Text(
-            'Use the sync password you set above.',
-            style: theme.textTheme.bodySmall,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CopyRow extends StatelessWidget {
-  const _CopyRow({required this.label, required this.value});
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Row(
-      children: [
-        SizedBox(
-          width: 60,
-          child: Text(
-            label,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: AppColors.textTertiary,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-        Expanded(
-          child: SelectableText(
-            value,
-            style: theme.textTheme.titleSmall?.copyWith(
-              color: AppColors.textPrimary,
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
-          ),
-        ),
-        InkWell(
-          onTap: () async {
-            await Clipboard.setData(ClipboardData(text: value));
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Copied: $value')),
-              );
-            }
-          },
-          borderRadius: BorderRadius.circular(6),
-          child: Padding(
-            padding: const EdgeInsets.all(6),
-            child: Icon(
-              Icons.copy_rounded,
-              size: 14,
-              color: AppColors.textTertiary,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
 
 String _hostFromUrl(String url) {
   try {
@@ -609,7 +277,7 @@ Future<void> _showServerSheet(
             ),
             const SizedBox(height: 4),
             Text(
-              'Use any reachable PocketBase instance — IP, host:port, or full URL.',
+              'Use any reachable PocketBase instance â€” IP, host:port, or full URL.',
               style: Theme.of(ctx).textTheme.bodyMedium,
             ),
             const SizedBox(height: Insets.lg),
