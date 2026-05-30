@@ -1,0 +1,16 @@
+services:
+  drift-media:
+    build: .
+    container_name: drift-media
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    environment:
+      # Pick a strong password — Drift signs in with this.
+      SYNC_PASSWORD: ${SYNC_PASSWORD:?Set SYNC_PASSWORD in .env or shell first}
+      MEDIA_DIR: /media
+    volumes:
+      # Point this at whatever folder of audio files you want to expose.
+      # The :ro flag makes it read-only inside the container — the server
+      # never writes back, only reads.
+      - ${MEDIA_DIR_HOST:-./media}:/media:ro

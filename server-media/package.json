@@ -1,0 +1,15 @@
+{
+  "name": "drift-media-server",
+  "version": "1.0.0",
+  "description": "Tiny streaming server for the Drift mobile app",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.1",
+    "music-metadata": "^7.14.0",
+    "chokidar": "^3.6.0"
+  }
+}
